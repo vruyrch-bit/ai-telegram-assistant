@@ -1,194 +1,218 @@
 # AI Telegram Assistant
 
-A full-stack AI-powered Telegram assistant built with Python, FastAPI, PostgreSQL, Docker, and OpenAI's GPT-OSS model through Groq.
+A cloud-deployed AI Telegram assistant built with Python, FastAPI, PostgreSQL, Docker, GitHub Actions, and OpenAI's GPT-OSS 20B model through Groq.
 
-The project demonstrates AI API integration, asynchronous programming, persistent conversation memory, REST API development, authentication, containerization, and database management.
+The project demonstrates how an AI model can be integrated into a real backend system with persistent memory, REST APIs, authentication, automated testing, CI, containerization, cloud deployment, and structured logging.
+
+[![CI](https://github.com/vruyrch-bit/ai-telegram-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/vruyrch-bit/ai-telegram-assistant/actions/workflows/ci.yml)
+
+---
+
+## Live API
+
+FastAPI is deployed on Railway:
+
+**API**
+```text
+https://api-product-863.up.railway.app
+```
+
+**Health Check**
+```text
+https://api-product-863.up.railway.app/health
+```
+
+**Interactive API Documentation**
+```text
+https://api-product-863.up.railway.app/docs
+```
+
+---
 
 ## Features
 
 - AI-powered Telegram chatbot
-- OpenAI GPT-OSS 20B model through Groq
-- Fast AI responses
+- OpenAI GPT-OSS 20B through Groq
 - Persistent conversation memory
 - PostgreSQL database
 - Async Python architecture
 - FastAPI REST API
 - API-key authentication
-- User and conversation management endpoints
+- User and conversation administration endpoints
 - Health monitoring endpoint
-- Bot statistics endpoint
-- Docker and Docker Compose support
-- Long Telegram message handling
-- AI API timeout and error handling
-- `/clear` command for deleting conversation memory
+- Usage statistics
+- Docker containerization
+- Docker Compose local environment
+- Railway cloud deployment
+- GitHub Actions CI
+- Automated API tests with Pytest
+- Structured application logging
+- AI timeout and rate-limit handling
+- Telegram long-message handling
+- `/clear` command for deleting user memory
+- Secrets managed through environment variables
 
-## Architecture
+---
 
-```text
-                    Telegram User
-                          |
-                          v
-                  Telegram Bot API
-                          |
-                          v
-                     Python Bot
-                    /          \
-                   v            v
-          Groq / GPT-OSS    PostgreSQL
-                                ^
-                                |
-                             FastAPI
-                                |
-                                v
-                          REST API Client
-```
-
-Docker Compose runs the main backend services:
+# Architecture
 
 ```text
-+---------------------------------------+
-|             Docker Compose            |
-|                                       |
-|   Telegram Bot                        |
-|        |                              |
-|        +----------> PostgreSQL        |
-|        |               ^              |
-|        v               |              |
-|   Groq API          FastAPI            |
-|                                       |
-+---------------------------------------+
+                         ┌─────────────────┐
+                         │ Telegram User   │
+                         └────────┬────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │ Telegram Bot API│
+                         └────────┬────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │   Python Bot    │
+                         │     Async       │
+                         └───────┬─────────┘
+                                 │
+                     ┌───────────┴───────────┐
+                     │                       │
+                     ▼                       ▼
+              ┌─────────────┐         ┌──────────────┐
+              │ Groq API    │         │ PostgreSQL   │
+              │ GPT-OSS 20B │         │ Conversation │
+              └─────────────┘         │ Memory       │
+                                      └──────▲───────┘
+                                             │
+                                             │
+                                      ┌──────┴───────┐
+                                      │   FastAPI    │
+                                      │   REST API   │
+                                      └──────┬───────┘
+                                             │
+                                             ▼
+                                      API / Swagger UI
 ```
 
-## Technology Stack
+---
 
-### Backend
+# Cloud Architecture
 
-- Python
+The application is deployed using Railway.
+
+```text
+Railway Project
+
+├── Telegram Bot
+│     ├── Python
+│     ├── Telegram API
+│     └── Groq / GPT-OSS
+│
+├── FastAPI
+│     ├── REST endpoints
+│     ├── API authentication
+│     └── Public HTTPS domain
+│
+└── PostgreSQL
+      └── Persistent conversation storage
+```
+
+The Telegram bot and FastAPI service share the same PostgreSQL database.
+
+---
+
+# Technology Stack
+
+## Backend
+
+- Python 3.12
 - FastAPI
 - python-telegram-bot
 - Psycopg 3
 
-### AI
+## AI
 
 - OpenAI GPT-OSS 20B
 - Groq API
 
-### Database
+## Database
 
 - PostgreSQL
 
-### Infrastructure
+## Infrastructure
 
 - Docker
 - Docker Compose
+- Railway
 
-### Development
+## Testing / CI
+
+- Pytest
+- GitHub Actions
+- Docker build verification
+
+## Development
 
 - Git
 - GitHub
 - Linux
 
-## Project Structure
+---
+
+# Project Structure
 
 ```text
 ai-telegram-assistant/
-|
+│
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+│
+├── tests/
+│   └── test_api.py
+│
 ├── main.py
 ├── api.py
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
+├── pytest.ini
 ├── .gitignore
 ├── .dockerignore
 └── README.md
 ```
 
-### `main.py`
+---
 
-Runs the Telegram bot and handles:
+# Telegram Bot
 
-- Telegram messages
-- AI requests
-- PostgreSQL conversation memory
-- `/start`
-- `/clear`
-- API errors
-- long responses
+The Telegram service is responsible for:
 
-### `api.py`
+- receiving Telegram messages
+- loading previous conversation history
+- sending messages to the AI model
+- saving conversations to PostgreSQL
+- handling API failures
+- splitting long Telegram responses
+- clearing user memory
+- structured production logging
 
-Provides the FastAPI backend with protected administrative endpoints.
-
-### PostgreSQL
-
-Stores persistent conversation history for each Telegram user.
-
-## REST API
-
-FastAPI provides interactive documentation at:
+Available commands:
 
 ```text
-http://localhost:8000/docs
+/start
 ```
 
-### Public Endpoints
+Starts the assistant.
 
-#### Health Check
-
-```http
-GET /health
+```text
+/clear
 ```
 
-Checks whether the API and PostgreSQL database are available.
+Deletes the user's stored conversation history.
 
-### Protected Endpoints
+---
 
-Protected endpoints require:
+# Persistent Conversation Memory
 
-```http
-X-API-Key: YOUR_ADMIN_API_KEY
-```
-
-#### Statistics
-
-```http
-GET /stats
-```
-
-Returns information such as:
-
-- total messages
-- total users
-- user messages
-- AI messages
-
-#### Users
-
-```http
-GET /users
-```
-
-Returns users with stored conversation history.
-
-#### User Conversation
-
-```http
-GET /users/{telegram_user_id}/messages
-```
-
-Returns conversation history for a specific Telegram user.
-
-#### Delete User Conversation
-
-```http
-DELETE /users/{telegram_user_id}/messages
-```
-
-Deletes the stored conversation memory for a user.
-
-## Conversation Memory
-
-Each conversation is stored in PostgreSQL.
+Conversation history is stored in PostgreSQL.
 
 Example:
 
@@ -196,106 +220,208 @@ Example:
 User:
 Remember that my favorite color is purple.
 
-AI:
+Assistant:
 Okay.
 
---- Bot restarted ---
+--- Application restarted ---
 
 User:
 What is my favorite color?
 
-AI:
+Assistant:
 Your favorite color is purple.
 ```
 
-Because the conversation is stored in PostgreSQL, memory survives application and container restarts.
+The memory survives:
 
-Only a limited number of recent messages are sent back to the AI model to keep requests efficient while the complete history remains stored in the database.
+- Python restarts
+- Docker container restarts
+- Railway redeployments
 
-## Telegram Commands
+The complete history is stored in PostgreSQL, while only a limited number of recent messages are provided to the AI model for each request.
 
-### `/start`
+---
 
-Starts the assistant.
+# REST API
 
-### `/clear`
+The FastAPI backend provides management and monitoring endpoints.
 
-Deletes the current user's stored conversation memory.
+Interactive Swagger documentation:
 
-## Environment Variables
+```text
+https://api-product-863.up.railway.app/docs
+```
 
-Create a `.env` file locally.
+---
 
-Example:
+## Public Endpoints
+
+### Root
+
+```http
+GET /
+```
+
+Returns basic service information.
+
+---
+
+### Health Check
+
+```http
+GET /health
+```
+
+Example response:
+
+```json
+{
+  "status": "healthy",
+  "database": "connected"
+}
+```
+
+This endpoint verifies that the API can successfully communicate with PostgreSQL.
+
+---
+
+# Protected Endpoints
+
+Administrative endpoints require:
+
+```http
+X-API-Key: YOUR_ADMIN_API_KEY
+```
+
+---
+
+## Statistics
+
+```http
+GET /stats
+```
+
+Returns statistics including:
+
+- total messages
+- total users
+- user messages
+- AI messages
+
+---
+
+## Users
+
+```http
+GET /users
+```
+
+Returns Telegram users that have stored conversation history.
+
+---
+
+## User Conversation
+
+```http
+GET /users/{telegram_user_id}/messages
+```
+
+Optional query parameter:
+
+```text
+limit=20
+```
+
+Returns recent stored messages for a Telegram user.
+
+---
+
+## Delete Conversation
+
+```http
+DELETE /users/{telegram_user_id}/messages
+```
+
+Deletes the stored conversation for that user.
+
+---
+
+# Authentication
+
+Administrative endpoints use API-key authentication.
+
+Requests must provide:
+
+```http
+X-API-Key: YOUR_ADMIN_API_KEY
+```
+
+Requests with a missing or invalid key receive:
+
+```http
+401 Unauthorized
+```
+
+Secrets are never stored directly in the source code.
+
+---
+
+# Environment Variables
+
+The application uses environment variables for configuration.
+
+Example `.env`:
 
 ```env
-TELEGRAM_TOKEN=your_telegram_bot_token
+TELEGRAM_TOKEN=your_telegram_token
+
 GROQ_API_KEY=your_groq_api_key
+
 ADMIN_API_KEY=your_admin_api_key
 
 POSTGRES_USER=telegrambot
+
 POSTGRES_PASSWORD=your_database_password
+
 POSTGRES_DB=telegram_ai_bot
 
 DATABASE_URL=postgresql://telegrambot:your_database_password@localhost:5432/telegram_ai_bot
 ```
 
-The real `.env` file is intentionally excluded from Git.
+The real `.env` file is excluded from Git.
 
-Never commit API keys, passwords, or tokens to the repository.
+Never commit:
 
-## Running With Docker
+- API keys
+- Telegram bot tokens
+- database passwords
+- administrative secrets
 
-Build the containers:
+---
 
-```bash
-docker compose build
-```
+# Running Locally
 
-Start all services:
-
-```bash
-docker compose up
-```
-
-Or run them in the background:
+Clone the repository:
 
 ```bash
-docker compose up -d
+git clone https://github.com/vruyrch-bit/ai-telegram-assistant.git
 ```
 
-Check running services:
+Enter the project:
 
 ```bash
-docker compose ps
+cd ai-telegram-assistant
 ```
 
-View bot logs:
-
-```bash
-docker compose logs -f bot
-```
-
-View API logs:
-
-```bash
-docker compose logs -f api
-```
-
-Stop the system:
-
-```bash
-docker compose down
-```
-
-The PostgreSQL Docker volume keeps database data persistent between container restarts.
-
-## Running Without Docker
-
-Create and activate a Python virtual environment:
+Create a virtual environment:
 
 ```bash
 python3 -m venv venv
+```
+
+Activate it:
+
+```bash
 source venv/bin/activate
 ```
 
@@ -305,7 +431,9 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Run the Telegram bot:
+Create your `.env` file.
+
+Then run the Telegram bot:
 
 ```bash
 python main.py
@@ -317,95 +445,291 @@ Run FastAPI in another terminal:
 fastapi dev api.py
 ```
 
-Then open:
+Open:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-## Security
+---
+
+# Running With Docker
+
+Build the services:
+
+```bash
+docker compose build
+```
+
+Start the system:
+
+```bash
+docker compose up
+```
+
+Run in detached mode:
+
+```bash
+docker compose up -d
+```
+
+Check services:
+
+```bash
+docker compose ps
+```
+
+View Telegram bot logs:
+
+```bash
+docker compose logs -f bot
+```
+
+View FastAPI logs:
+
+```bash
+docker compose logs -f api
+```
+
+Stop all containers:
+
+```bash
+docker compose down
+```
+
+PostgreSQL data is stored in a Docker volume and persists between normal container restarts.
+
+---
+
+# Automated Testing
+
+The project uses Pytest.
+
+Run tests locally:
+
+```bash
+pytest -q
+```
+
+Current automated tests verify behavior including:
+
+- root API endpoint
+- authentication requirement
+- protected `/stats` endpoint
+- protected `/users` endpoint
+- rejection of invalid API keys
+
+---
+
+# CI Pipeline
+
+GitHub Actions automatically runs when code is pushed to `main` or when a pull request targets `main`.
+
+The CI pipeline performs:
+
+```text
+Checkout source
+       ↓
+Set up Python 3.12
+       ↓
+Install dependencies
+       ↓
+Check dependency consistency
+       ↓
+Check Python syntax
+       ↓
+Run automated tests
+       ↓
+Build Docker image
+       ↓
+Pass ✅ / Fail ❌
+```
+
+This helps catch problems before relying on a new deployment.
+
+---
+
+# Cloud Deployment
+
+The project is deployed on Railway.
+
+Production services:
+
+```text
+Telegram Bot      ✅
+FastAPI           ✅
+PostgreSQL        ✅
+```
+
+Railway provides:
+
+- container deployment
+- environment variable management
+- PostgreSQL hosting
+- persistent storage
+- HTTPS networking
+- deployment logs
+- GitHub integration
+
+The bot can continue running even when the development computer is turned off.
+
+---
+
+# Logging and Monitoring
+
+The application uses structured logging instead of relying only on basic `print()` statements.
+
+Example Telegram logs:
+
+```text
+INFO | telegram-bot | Message received user_id=...
+INFO | telegram-bot | AI response received user_id=...
+INFO | telegram-bot | Conversation saved user_id=...
+```
+
+Example API logs:
+
+```text
+INFO | api | GET /health -> 200 | 18.42ms
+INFO | api | GET /stats -> 401 | 2.14ms
+```
+
+User message contents are intentionally not included in standard application logs.
+
+The `/health` endpoint can also be used for service monitoring.
+
+---
+
+# Error Handling
+
+The bot handles several common failures:
+
+- AI API rate limits
+- AI timeouts
+- connection errors
+- empty AI responses
+- Telegram message size limits
+- PostgreSQL connection errors
+- invalid API authentication
+
+Long AI responses are automatically divided into Telegram-compatible message sizes.
+
+---
+
+# Security
 
 The project includes several basic security practices:
 
-- Secrets are stored in environment variables
-- `.env` is excluded from Git
-- Administrative API endpoints require an API key
-- SQL queries use parameterized values
-- Conversation data is stored in PostgreSQL rather than exposed publicly
-- Docker images do not include the `.env` file
+- secrets stored in environment variables
+- `.env` excluded from Git
+- API-key protected administrative endpoints
+- parameterized PostgreSQL queries
+- no user conversation text in normal logs
+- `.env` excluded from Docker images
+- database not exposed directly to public users
+- protected conversation-management endpoints
 
-## Error Handling
+---
 
-The bot handles common external API problems such as:
-
-- AI rate limits
-- connection failures
-- timeouts
-- empty AI responses
-- Telegram message length limits
-
-Long AI responses are automatically split into multiple Telegram messages.
-
-## Current Development Status
-
-The core system is working:
-
-- [x] Telegram bot
-- [x] AI integration
-- [x] GPT-OSS through Groq
-- [x] Persistent PostgreSQL memory
-- [x] Async database access
-- [x] FastAPI REST API
-- [x] API-key authentication
-- [x] Docker
-- [x] Docker Compose
-- [x] Git / GitHub
-- [ ] Automated testing
-- [ ] GitHub Actions CI/CD
-- [ ] Cloud deployment
-- [ ] Logging and monitoring
-- [ ] Redis caching
-- [ ] Vector database / RAG
-
-## Future Improvements
-
-Planned improvements include:
-
-- CI/CD with GitHub Actions
-- automated unit and integration tests
-- cloud deployment
-- structured application logging
-- Redis caching
-- database connection pooling
-- rate limiting
-- user authentication
-- document upload and RAG
-- vector database integration
-- AI tool/function calling
-- monitoring and production observability
-
-## Purpose
-
-This project was built as a practical software engineering and AI learning project.
-
-The goal is not only to call an AI model, but to understand how a real AI-backed system is structured:
+# Development Workflow
 
 ```text
-User
-  |
-API / Event
-  |
-Application Logic
-  |
-AI Model + Database
-  |
-Infrastructure
+Developer
+    │
+    ▼
+Code change
+    │
+    ▼
+Git commit
+    │
+    ▼
+GitHub push
+    │
+    ▼
+GitHub Actions
+    │
+    ├── Tests
+    ├── Syntax checks
+    └── Docker build
+    │
+    ▼
+Railway deployment
+    │
+    ▼
+Production
 ```
 
-It demonstrates how AI can be integrated into a backend application using modern software engineering practices.
+---
 
-## Author
+# What I Learned
+
+This project helped me gain practical experience with:
+
+- asynchronous Python
+- event-driven applications
+- REST API design
+- AI model integration
+- prompt and conversation management
+- PostgreSQL
+- persistent application state
+- authentication
+- Docker
+- cloud deployment
+- Git workflows
+- CI pipelines
+- automated testing
+- debugging external APIs
+- structured production logging
+- environment-based configuration
+
+The goal of the project was not simply to call an AI model, but to understand how an AI-powered application can be structured as a real backend system.
+
+---
+
+# Future Improvements
+
+Possible future additions include:
+
+- Redis caching
+- database connection pooling
+- application-level rate limiting
+- user authentication
+- document upload
+- Retrieval-Augmented Generation (RAG)
+- vector database support
+- AI tool/function calling
+- advanced monitoring
+- Kubernetes deployment
+- Terraform infrastructure
+- more integration and load tests
+
+---
+
+# Status
+
+### Version 1
+
+- [x] Telegram bot
+- [x] GPT-OSS AI integration
+- [x] PostgreSQL persistent memory
+- [x] Async processing
+- [x] FastAPI REST API
+- [x] API authentication
+- [x] Docker
+- [x] Docker Compose
+- [x] Railway cloud deployment
+- [x] Git / GitHub
+- [x] GitHub Actions CI
+- [x] Automated tests
+- [x] Docker build validation
+- [x] Structured logging
+- [x] Health monitoring
+- [x] Public API documentation
+
+---
+
+# Author
 
 **Vruyr Chakhmakhchyan**
 
-GitHub: `vruyrch-bit`
+GitHub: [vruyrch-bit](https://github.com/vruyrch-bit)
