@@ -1,7 +1,9 @@
+import logging
 import os
+import sys
 
-import psycopg
 import groq
+import psycopg
 
 from dotenv import load_dotenv
 from groq import AsyncGroq
@@ -11,10 +13,33 @@ from telegram.constants import ChatAction
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
     ContextTypes,
+    MessageHandler,
     filters,
 )
+
+
+# ==================================================
+# LOGGING
+# ==================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format=(
+        "%(asctime)s | "
+        "%(levelname)s | "
+        "telegram-bot | "
+        "%(name)s | "
+        "%(message)s"
+    ),
+    stream=sys.stdout,
+    force=True,
+)
+
+# Reduce noisy HTTP logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 
 # ==================================================
@@ -23,13 +48,11 @@ from telegram.ext import (
 
 AI_MODEL = "openai/gpt-oss-20b"
 
-# All messages remain stored in PostgreSQL.
-# Only the latest 30 are sent to the AI each time.
 MEMORY_MESSAGE_LIMIT = 30
 
 
 # ==================================================
-# LOAD ENVIRONMENT VARIABLES
+# ENVIRONMENT VARIABLES
 # ==================================================
 
 load_dotenv()
@@ -41,17 +64,17 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not TELEGRAM_TOKEN:
     raise ValueError(
-        "TELEGRAM_TOKEN was not found in .env"
+        "TELEGRAM_TOKEN was not found"
     )
 
 if not GROQ_API_KEY:
     raise ValueError(
-        "GROQ_API_KEY was not found in .env"
+        "GROQ_API_KEY was not found"
     )
 
 if not DATABASE_URL:
     raise ValueError(
-        "DATABASE_URL was not found in .env"
+        "DATABASE_URL was not found"
     )
 
 
@@ -59,13 +82,10 @@ if not DATABASE_URL:
 # GROQ CLIENT
 # ==================================================
 
-# max_retries=1 prevents very long automatic retry delays.
-# timeout=20 means a request cannot silently wait for a minute.
-
 client = AsyncGroq(
     api_key=GROQ_API_KEY,
     timeout=20.0,
-    max_retries=1
+    max_retries=1,
 )
 
 
@@ -75,7 +95,9 @@ client = AsyncGroq(
 
 async def initialize_database():
 
-    print("Connecting to PostgreSQL...")
+    logger.info(
+        "Connecting to PostgreSQL"
+    )
 
     async with await psycopg.AsyncConnection.connect(
         DATABASE_URL
@@ -105,7 +127,9 @@ async def initialize_database():
             """
         )
 
-    print("PostgreSQL memory database ready.")
+    logger.info(
+        "PostgreSQL memory database ready"
+    )
 
 
 # ==================================================
@@ -115,7 +139,7 @@ async def initialize_database():
 async def save_message(
     telegram_user_id: int,
     role: str,
-    content: str
+    content: str,
 ):
 
     async with await psycopg.AsyncConnection.connect(
@@ -134,8 +158,8 @@ async def save_message(
             (
                 telegram_user_id,
                 role,
-                content
-            )
+                content,
+            ),
         )
 
 
@@ -144,7 +168,7 @@ async def save_message(
 # ==================================================
 
 async def load_memory(
-    telegram_user_id: int
+    telegram_user_id: int,
 ):
 
     async with await psycopg.AsyncConnection.connect(
@@ -161,42 +185,35 @@ async def load_memory(
             """,
             (
                 telegram_user_id,
-                MEMORY_MESSAGE_LIMIT
-            )
+                MEMORY_MESSAGE_LIMIT,
+            ),
         )
 
         rows = await cursor.fetchall()
 
-
-    # Database returned newest first.
-    # AI needs oldest first.
     rows.reverse()
 
     messages = []
 
-
     for role, content in rows:
 
-        # Old Gemini messages were stored as "model".
-        # Groq/OpenAI expects "assistant".
+        # Compatibility with old Gemini messages
         if role == "model":
             role = "assistant"
 
-        # Only allow valid chat roles.
-        if role not in [
+        if role not in (
             "user",
             "assistant",
-            "system"
-        ]:
+            "system",
+        ):
             continue
 
         messages.append(
             {
                 "role": role,
-                "content": content
+                "content": content,
             }
         )
-
 
     return messages
 
@@ -206,7 +223,7 @@ async def load_memory(
 # ==================================================
 
 async def delete_memory(
-    telegram_user_id: int
+    telegram_user_id: int,
 ):
 
     async with await psycopg.AsyncConnection.connect(
@@ -220,7 +237,7 @@ async def delete_memory(
             """,
             (
                 telegram_user_id,
-            )
+            ),
         )
 
 
@@ -230,14 +247,14 @@ async def delete_memory(
 
 async def start(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE
+    context: ContextTypes.DEFAULT_TYPE,
 ):
 
     await update.message.reply_text(
         "Hello! 👋\n\n"
-        "I am your AI assistant powered by "
-        "OpenAI GPT-OSS 20B.\n\n"
-        "I also have persistent PostgreSQL memory.\n\n"
+        "I am an AI assistant powered by "
+        "OpenAI GPT-OSS 20B through Groq.\n\n"
+        "I have persistent PostgreSQL memory.\n\n"
         "Send me anything you'd like to talk about.\n\n"
         "Use /clear to delete our conversation memory."
     )
@@ -249,7 +266,7 @@ async def start(
 
 async def clear_memory(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE
+    context: ContextTypes.DEFAULT_TYPE,
 ):
 
     telegram_user_id = (
@@ -260,9 +277,9 @@ async def clear_memory(
         telegram_user_id
     )
 
-    print(
-        f"Memory cleared for user "
-        f"{telegram_user_id}"
+    logger.info(
+        "Memory cleared user_id=%s",
+        telegram_user_id,
     )
 
     await update.message.reply_text(
@@ -276,18 +293,15 @@ async def clear_memory(
 
 async def send_long_message(
     update: Update,
-    text: str
+    text: str,
 ):
 
-    # Telegram's maximum message size
-    # is slightly above 4000 characters.
     max_length = 4000
-
 
     for i in range(
         0,
         len(text),
-        max_length
+        max_length,
     ):
 
         part = text[
@@ -300,68 +314,65 @@ async def send_long_message(
 
 
 # ==================================================
-# ASK GROQ / OPENAI GPT-OSS
+# ASK AI
 # ==================================================
 
 async def ask_ai(
     user_message: str,
-    history
+    history,
 ):
 
     messages = [
-{
-    "role": "system",
-    "content": (
-        "You are an AI assistant running inside a Telegram bot. "
-        "You are powered by OpenAI's GPT-OSS 20B model through Groq. "
-        "You are not ChatGPT and should not claim to be ChatGPT. "
-        "If asked who or what you are, explain that you are a custom "
-        "AI Telegram assistant built using GPT-OSS 20B. "
-        "Give clear, useful answers. "
-        "Keep answers reasonably concise unless the user asks for detail."
-    )
-}
+        {
+            "role": "system",
+            "content": (
+                "You are an AI assistant running "
+                "inside a custom Telegram bot. "
+                "You are powered by OpenAI's "
+                "GPT-OSS 20B model through Groq. "
+                "You are not ChatGPT and must not "
+                "claim to be ChatGPT. "
+                "If asked who you are, explain that "
+                "you are a custom AI Telegram "
+                "assistant powered by GPT-OSS 20B. "
+                "Give clear and useful answers. "
+                "Keep answers reasonably concise "
+                "unless the user asks for detail."
+            ),
+        }
     ]
 
-    # Add previous conversation
-    messages.extend(history)
+    messages.extend(
+        history
+    )
 
-    # Add newest user message
     messages.append(
         {
             "role": "user",
-            "content": user_message
+            "content": user_message,
         }
     )
 
-
-    print(
-        f"Sending request to {AI_MODEL}..."
+    logger.info(
+        "Sending request model=%s",
+        AI_MODEL,
     )
 
-
-    response = await client.chat.completions.create(
-        model=AI_MODEL,
-        messages=messages,
-
-        # GPT-OSS supports low/medium/high reasoning.
-        # Low keeps ordinary Telegram answers faster.
-        reasoning_effort="low",
-
-        # Prevent extremely huge responses.
-        max_completion_tokens=1500
+    response = (
+        await client.chat.completions.create(
+            model=AI_MODEL,
+            messages=messages,
+            reasoning_effort="low",
+            max_completion_tokens=1500,
+        )
     )
 
-
-    answer = (
+    return (
         response
         .choices[0]
         .message
         .content
     )
-
-
-    return answer
 
 
 # ==================================================
@@ -370,7 +381,7 @@ async def ask_ai(
 
 async def handle_message(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE
+    context: ContextTypes.DEFAULT_TYPE,
 ):
 
     telegram_user_id = (
@@ -381,52 +392,40 @@ async def handle_message(
         update.message.text
     )
 
-
-    print(
-        f"Message from user "
-        f"{telegram_user_id}: "
-        f"{user_message}"
+    # Do NOT log the actual user's message
+    logger.info(
+        "Message received user_id=%s",
+        telegram_user_id,
     )
-
 
     try:
 
-        # ------------------------------------------
-        # Telegram typing animation
-        # ------------------------------------------
-
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
-            action=ChatAction.TYPING
+            action=ChatAction.TYPING,
         )
-
-
-        # ------------------------------------------
-        # Load PostgreSQL memory
-        # ------------------------------------------
 
         history = await load_memory(
             telegram_user_id
         )
 
-
-        print(
-            f"Loaded {len(history)} "
-            f"messages from PostgreSQL."
+        logger.info(
+            "Loaded memory user_id=%s messages=%s",
+            telegram_user_id,
+            len(history),
         )
-
-
-        # ------------------------------------------
-        # Ask AI
-        # ------------------------------------------
 
         answer = await ask_ai(
             user_message,
-            history
+            history,
         )
 
-
         if not answer:
+
+            logger.warning(
+                "Empty AI response user_id=%s",
+                telegram_user_id,
+            )
 
             await update.message.reply_text(
                 "The AI returned an empty response."
@@ -434,57 +433,39 @@ async def handle_message(
 
             return
 
-
-        print(
-            "AI response received."
+        logger.info(
+            "AI response received user_id=%s",
+            telegram_user_id,
         )
-
-
-        # ------------------------------------------
-        # Save user message
-        # ------------------------------------------
 
         await save_message(
             telegram_user_id,
             "user",
-            user_message
+            user_message,
         )
-
-
-        # ------------------------------------------
-        # Save AI response
-        # ------------------------------------------
 
         await save_message(
             telegram_user_id,
             "assistant",
-            answer
+            answer,
         )
 
-
-        print(
-            "Conversation saved to PostgreSQL."
+        logger.info(
+            "Conversation saved user_id=%s",
+            telegram_user_id,
         )
-
-
-        # ------------------------------------------
-        # Send answer
-        # ------------------------------------------
 
         await send_long_message(
             update,
-            answer
+            answer,
         )
 
 
-    # ==================================================
-    # GROQ RATE LIMIT
-    # ==================================================
+    except groq.RateLimitError:
 
-    except groq.RateLimitError as error:
-
-        print(
-            f"GROQ RATE LIMIT: {error}"
+        logger.warning(
+            "Groq rate limit reached user_id=%s",
+            telegram_user_id,
         )
 
         await update.message.reply_text(
@@ -493,14 +474,11 @@ async def handle_message(
         )
 
 
-    # ==================================================
-    # GROQ TIMEOUT
-    # ==================================================
+    except groq.APITimeoutError:
 
-    except groq.APITimeoutError as error:
-
-        print(
-            f"GROQ TIMEOUT: {error}"
+        logger.warning(
+            "Groq timeout user_id=%s",
+            telegram_user_id,
         )
 
         await update.message.reply_text(
@@ -509,14 +487,11 @@ async def handle_message(
         )
 
 
-    # ==================================================
-    # CONNECTION ERROR
-    # ==================================================
+    except groq.APIConnectionError:
 
-    except groq.APIConnectionError as error:
-
-        print(
-            f"GROQ CONNECTION ERROR: {error}"
+        logger.exception(
+            "Groq connection error user_id=%s",
+            telegram_user_id,
         )
 
         await update.message.reply_text(
@@ -525,14 +500,12 @@ async def handle_message(
         )
 
 
-    # ==================================================
-    # OTHER ERRORS
-    # ==================================================
+    except Exception:
 
-    except Exception as error:
-
-        print(
-            f"FINAL ERROR: {error}"
+        logger.exception(
+            "Unexpected message-processing "
+            "error user_id=%s",
+            telegram_user_id,
         )
 
         await update.message.reply_text(
@@ -545,10 +518,14 @@ async def handle_message(
 # ==================================================
 
 async def post_init(
-    application: Application
+    application: Application,
 ):
 
     await initialize_database()
+
+    logger.info(
+        "Telegram bot initialization complete"
+    )
 
 
 # ==================================================
@@ -557,14 +534,14 @@ async def post_init(
 
 def main():
 
-    print(
-        "Starting AI Telegram Bot..."
+    logger.info(
+        "Starting AI Telegram Bot"
     )
 
-    print(
-        f"AI model: {AI_MODEL}"
+    logger.info(
+        "AI model=%s",
+        AI_MODEL,
     )
-
 
     application = (
         Application.builder()
@@ -573,42 +550,37 @@ def main():
         .build()
     )
 
-
     application.add_handler(
         CommandHandler(
             "start",
-            start
+            start,
         )
     )
-
 
     application.add_handler(
         CommandHandler(
             "clear",
-            clear_memory
+            clear_memory,
         )
     )
-
 
     application.add_handler(
         MessageHandler(
             filters.TEXT
             & ~filters.COMMAND,
-            handle_message
+            handle_message,
         )
     )
 
-
-    print(
-        "Starting Telegram connection..."
+    logger.info(
+        "Starting Telegram polling"
     )
-
 
     application.run_polling()
 
 
 # ==================================================
-# START PROGRAM
+# START
 # ==================================================
 
 if __name__ == "__main__":
