@@ -36,8 +36,9 @@ logging.basicConfig(
     force=True,
 )
 
-# Reduce noisy HTTP logs
-logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(
+    logging.WARNING
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,11 @@ logger = logging.getLogger(__name__)
 
 AI_MODEL = "openai/gpt-oss-20b"
 
+VOICE_MODEL = "whisper-large-v3-turbo"
+
 MEMORY_MESSAGE_LIMIT = 30
+
+MAX_VOICE_SIZE = 20 * 1024 * 1024
 
 
 # ==================================================
@@ -57,9 +62,17 @@ MEMORY_MESSAGE_LIMIT = 30
 
 load_dotenv()
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-DATABASE_URL = os.getenv("DATABASE_URL")
+TELEGRAM_TOKEN = os.getenv(
+    "TELEGRAM_TOKEN"
+)
+
+GROQ_API_KEY = os.getenv(
+    "GROQ_API_KEY"
+)
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL"
+)
 
 
 if not TELEGRAM_TOKEN:
@@ -197,7 +210,7 @@ async def load_memory(
 
     for role, content in rows:
 
-        # Compatibility with old Gemini messages
+        # Compatibility with old Gemini history
         if role == "model":
             role = "assistant"
 
@@ -254,8 +267,10 @@ async def start(
         "Hello! 👋\n\n"
         "I am an AI assistant powered by "
         "OpenAI GPT-OSS 20B through Groq.\n\n"
-        "I have persistent PostgreSQL memory.\n\n"
-        "Send me anything you'd like to talk about.\n\n"
+        "You can send me:\n"
+        "• Text messages 💬\n"
+        "• Voice messages 🎤\n\n"
+        "I also have persistent PostgreSQL memory.\n\n"
         "Use /clear to delete our conversation memory."
     )
 
@@ -376,7 +391,72 @@ async def ask_ai(
 
 
 # ==================================================
-# HANDLE USER MESSAGE
+# PROCESS TEXT AFTER IT IS UNDERSTOOD
+# ==================================================
+
+async def process_user_message(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user_message: str,
+):
+
+    telegram_user_id = (
+        update.effective_user.id
+    )
+
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id,
+        action=ChatAction.TYPING,
+    )
+
+    history = await load_memory(
+        telegram_user_id
+    )
+
+    logger.info(
+        "Loaded memory user_id=%s messages=%s",
+        telegram_user_id,
+        len(history),
+    )
+
+    answer = await ask_ai(
+        user_message,
+        history,
+    )
+
+    if not answer:
+
+        await update.message.reply_text(
+            "The AI returned an empty response."
+        )
+
+        return
+
+    await save_message(
+        telegram_user_id,
+        "user",
+        user_message,
+    )
+
+    await save_message(
+        telegram_user_id,
+        "assistant",
+        answer,
+    )
+
+    logger.info(
+        "Conversation saved user_id=%s",
+        telegram_user_id,
+    )
+
+    await send_long_message(
+        update,
+        answer,
+    )
+
+
+# ==================================================
+# HANDLE TEXT MESSAGE
 # ==================================================
 
 async def handle_message(
@@ -392,74 +472,18 @@ async def handle_message(
         update.message.text
     )
 
-    # Do NOT log the actual user's message
     logger.info(
-        "Message received user_id=%s",
+        "Text message received user_id=%s",
         telegram_user_id,
     )
 
     try:
 
-        await context.bot.send_chat_action(
-            chat_id=update.effective_chat.id,
-            action=ChatAction.TYPING,
-        )
-
-        history = await load_memory(
-            telegram_user_id
-        )
-
-        logger.info(
-            "Loaded memory user_id=%s messages=%s",
-            telegram_user_id,
-            len(history),
-        )
-
-        answer = await ask_ai(
-            user_message,
-            history,
-        )
-
-        if not answer:
-
-            logger.warning(
-                "Empty AI response user_id=%s",
-                telegram_user_id,
-            )
-
-            await update.message.reply_text(
-                "The AI returned an empty response."
-            )
-
-            return
-
-        logger.info(
-            "AI response received user_id=%s",
-            telegram_user_id,
-        )
-
-        await save_message(
-            telegram_user_id,
-            "user",
-            user_message,
-        )
-
-        await save_message(
-            telegram_user_id,
-            "assistant",
-            answer,
-        )
-
-        logger.info(
-            "Conversation saved user_id=%s",
-            telegram_user_id,
-        )
-
-        await send_long_message(
+        await process_user_message(
             update,
-            answer,
+            context,
+            user_message,
         )
-
 
     except groq.RateLimitError:
 
@@ -473,7 +497,6 @@ async def handle_message(
             "Please try again shortly."
         )
 
-
     except groq.APITimeoutError:
 
         logger.warning(
@@ -486,7 +509,6 @@ async def handle_message(
             "Please try again."
         )
 
-
     except groq.APIConnectionError:
 
         logger.exception(
@@ -495,21 +517,206 @@ async def handle_message(
         )
 
         await update.message.reply_text(
-            "I couldn't connect to the AI service. "
-            "Please try again."
+            "I couldn't connect to the AI service."
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Unexpected text-message error "
+            "user_id=%s",
+            telegram_user_id,
+        )
+
+        await update.message.reply_text(
+            "Something went wrong."
+        )
+
+
+# ==================================================
+# TRANSCRIBE VOICE
+# ==================================================
+
+async def transcribe_voice(
+    audio_bytes: bytes,
+):
+
+    logger.info(
+        "Sending voice message to Whisper"
+    )
+
+    transcription = (
+        await client.audio.transcriptions.create(
+            file=(
+                "voice.ogg",
+                audio_bytes,
+                "audio/ogg",
+            ),
+            model=VOICE_MODEL,
+            response_format="json",
+            temperature=0.0,
+        )
+    )
+
+    return transcription.text
+
+
+# ==================================================
+# HANDLE VOICE MESSAGE
+# ==================================================
+
+async def handle_voice(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+
+    telegram_user_id = (
+        update.effective_user.id
+    )
+
+    voice = update.message.voice
+
+    logger.info(
+        "Voice message received user_id=%s "
+        "duration=%ss size=%s",
+        telegram_user_id,
+        voice.duration,
+        voice.file_size,
+    )
+
+    try:
+
+        # ------------------------------------------
+        # CHECK FILE SIZE
+        # ------------------------------------------
+
+        if (
+            voice.file_size
+            and voice.file_size > MAX_VOICE_SIZE
+        ):
+
+            await update.message.reply_text(
+                "That voice message is too large "
+                "for me to process."
+            )
+
+            return
+
+
+        # ------------------------------------------
+        # SHOW USER THAT VOICE IS PROCESSING
+        # ------------------------------------------
+
+        await update.message.reply_text(
+            "🎤 Listening..."
+        )
+
+
+        # ------------------------------------------
+        # DOWNLOAD VOICE FROM TELEGRAM
+        # ------------------------------------------
+
+        telegram_file = (
+            await context.bot.get_file(
+                voice.file_id
+            )
+        )
+
+        audio_data = (
+            await telegram_file.download_as_bytearray()
+        )
+
+        audio_bytes = bytes(
+            audio_data
+        )
+
+
+        # ------------------------------------------
+        # SPEECH → TEXT
+        # ------------------------------------------
+
+        transcription = await transcribe_voice(
+            audio_bytes
+        )
+
+        transcription = (
+            transcription.strip()
+        )
+
+
+        if not transcription:
+
+            await update.message.reply_text(
+                "I couldn't understand the "
+                "voice message."
+            )
+
+            return
+
+
+        logger.info(
+            "Voice transcription successful "
+            "user_id=%s",
+            telegram_user_id,
+        )
+
+
+        # Show what Whisper understood
+        await update.message.reply_text(
+            f"📝 I heard:\n{transcription}"
+        )
+
+
+        # ------------------------------------------
+        # USE NORMAL AI PIPELINE
+        # ------------------------------------------
+
+        await process_user_message(
+            update,
+            context,
+            transcription,
+        )
+
+
+    except groq.RateLimitError:
+
+        logger.warning(
+            "Voice rate limit reached "
+            "user_id=%s",
+            telegram_user_id,
+        )
+
+        await update.message.reply_text(
+            "The voice AI rate limit has been "
+            "reached. Please try again later."
+        )
+
+
+    except groq.APITimeoutError:
+
+        logger.warning(
+            "Voice transcription timeout "
+            "user_id=%s",
+            telegram_user_id,
+        )
+
+        await update.message.reply_text(
+            "The voice message took too long "
+            "to process. Please try again."
         )
 
 
     except Exception:
 
         logger.exception(
-            "Unexpected message-processing "
-            "error user_id=%s",
+            "Unexpected voice-message error "
+            "user_id=%s",
             telegram_user_id,
         )
 
         await update.message.reply_text(
-            "Something went wrong."
+            "I couldn't process that "
+            "voice message."
         )
 
 
@@ -539,8 +746,13 @@ def main():
     )
 
     logger.info(
-        "AI model=%s",
+        "Text model=%s",
         AI_MODEL,
+    )
+
+    logger.info(
+        "Voice model=%s",
+        VOICE_MODEL,
     )
 
     application = (
@@ -550,6 +762,8 @@ def main():
         .build()
     )
 
+
+    # /start
     application.add_handler(
         CommandHandler(
             "start",
@@ -557,6 +771,8 @@ def main():
         )
     )
 
+
+    # /clear
     application.add_handler(
         CommandHandler(
             "clear",
@@ -564,6 +780,17 @@ def main():
         )
     )
 
+
+    # Voice messages
+    application.add_handler(
+        MessageHandler(
+            filters.VOICE,
+            handle_voice,
+        )
+    )
+
+
+    # Normal text
     application.add_handler(
         MessageHandler(
             filters.TEXT
@@ -571,6 +798,7 @@ def main():
             handle_message,
         )
     )
+
 
     logger.info(
         "Starting Telegram polling"
