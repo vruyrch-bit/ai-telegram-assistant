@@ -1,4 +1,4 @@
-import io
+kimport io
 import logging
 import os
 import re
@@ -41,9 +41,7 @@ logging.basicConfig(
     force=True,
 )
 
-logging.getLogger("httpx").setLevel(
-    logging.WARNING
-)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -75,17 +73,9 @@ MAX_DOCUMENT_CONTEXT = 12000
 
 load_dotenv()
 
-TELEGRAM_TOKEN = os.getenv(
-    "TELEGRAM_TOKEN"
-)
-
-GROQ_API_KEY = os.getenv(
-    "GROQ_API_KEY"
-)
-
-DATABASE_URL = os.getenv(
-    "DATABASE_URL"
-)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 if not TELEGRAM_TOKEN:
@@ -129,6 +119,10 @@ async def initialize_database():
         DATABASE_URL
     ) as connection:
 
+        # ------------------------------------------
+        # Conversation memory
+        # ------------------------------------------
+
         await connection.execute(
             """
             CREATE TABLE IF NOT EXISTS messages (
@@ -158,6 +152,11 @@ async def initialize_database():
             """
         )
 
+
+        # ------------------------------------------
+        # Documents
+        # ------------------------------------------
+
         await connection.execute(
             """
             CREATE TABLE IF NOT EXISTS documents (
@@ -174,6 +173,11 @@ async def initialize_database():
             )
             """
         )
+
+
+        # ------------------------------------------
+        # Document chunks
+        # ------------------------------------------
 
         await connection.execute(
             """
@@ -211,6 +215,46 @@ async def initialize_database():
             ON document_chunks (
                 document_id,
                 chunk_index
+            )
+            """
+        )
+
+
+        # ------------------------------------------
+        # Tasks
+        # ------------------------------------------
+
+        await connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                id BIGSERIAL PRIMARY KEY,
+
+                telegram_user_id BIGINT NOT NULL,
+
+                title TEXT NOT NULL,
+
+                status VARCHAR(20)
+                    NOT NULL
+                    DEFAULT 'open',
+
+                due_date TEXT,
+
+                created_at TIMESTAMPTZ
+                    DEFAULT CURRENT_TIMESTAMP,
+
+                completed_at TIMESTAMPTZ
+            )
+            """
+        )
+
+        await connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS
+            idx_tasks_user
+
+            ON tasks (
+                telegram_user_id,
+                id
             )
             """
         )
@@ -313,7 +357,7 @@ async def load_memory(
 
 
 # ==================================================
-# DELETE CONVERSATION MEMORY
+# DELETE MEMORY
 # ==================================================
 
 async def delete_memory(
@@ -334,6 +378,157 @@ async def delete_memory(
                 telegram_user_id,
             ),
         )
+
+
+# ==================================================
+# TASK DATABASE FUNCTIONS
+# ==================================================
+
+async def create_task(
+    telegram_user_id: int,
+    title: str,
+    due_date=None,
+):
+
+    async with await psycopg.AsyncConnection.connect(
+        DATABASE_URL
+    ) as connection:
+
+        cursor = await connection.execute(
+            """
+            INSERT INTO tasks (
+                telegram_user_id,
+                title,
+                due_date
+            )
+
+            VALUES (%s, %s, %s)
+
+            RETURNING id
+            """,
+            (
+                telegram_user_id,
+                title,
+                due_date,
+            ),
+        )
+
+        row = await cursor.fetchone()
+
+    return row[0]
+
+
+async def get_tasks(
+    telegram_user_id: int,
+):
+
+    async with await psycopg.AsyncConnection.connect(
+        DATABASE_URL
+    ) as connection:
+
+        cursor = await connection.execute(
+            """
+            SELECT
+                id,
+                title,
+                status,
+                due_date
+
+            FROM tasks
+
+            WHERE telegram_user_id = %s
+
+            ORDER BY
+                CASE
+                    WHEN status = 'open'
+                    THEN 0
+                    ELSE 1
+                END,
+
+                id ASC
+            """,
+            (
+                telegram_user_id,
+            ),
+        )
+
+        return await cursor.fetchall()
+
+
+async def complete_task(
+    telegram_user_id: int,
+    task_id: int,
+):
+
+    async with await psycopg.AsyncConnection.connect(
+        DATABASE_URL
+    ) as connection:
+
+        cursor = await connection.execute(
+            """
+            UPDATE tasks
+
+            SET
+                status = 'done',
+
+                completed_at =
+                    CURRENT_TIMESTAMP
+
+            WHERE
+                id = %s
+
+                AND telegram_user_id = %s
+
+                AND status = 'open'
+
+            RETURNING title
+            """,
+            (
+                task_id,
+                telegram_user_id,
+            ),
+        )
+
+        row = await cursor.fetchone()
+
+    if not row:
+        return None
+
+    return row[0]
+
+
+async def delete_task(
+    telegram_user_id: int,
+    task_id: int,
+):
+
+    async with await psycopg.AsyncConnection.connect(
+        DATABASE_URL
+    ) as connection:
+
+        cursor = await connection.execute(
+            """
+            DELETE FROM tasks
+
+            WHERE
+                id = %s
+
+                AND telegram_user_id = %s
+
+            RETURNING title
+            """,
+            (
+                task_id,
+                telegram_user_id,
+            ),
+        )
+
+        row = await cursor.fetchone()
+
+    if not row:
+        return None
+
+    return row[0]
 
 
 # ==================================================
@@ -526,7 +721,7 @@ async def save_document(
 
 
 # ==================================================
-# LOAD USER DOCUMENTS
+# LOAD DOCUMENTS
 # ==================================================
 
 async def load_documents(
@@ -562,7 +757,7 @@ async def load_documents(
 
 
 # ==================================================
-# DELETE USER DOCUMENTS
+# DELETE DOCUMENTS
 # ==================================================
 
 async def delete_documents(
@@ -696,7 +891,6 @@ async def get_document_context(
 
     summary_request = any(
         phrase in lower_question
-
         for phrase in (
             "summarize",
             "summary",
@@ -792,7 +986,6 @@ async def get_document_context(
             + len(section)
             > MAX_DOCUMENT_CONTEXT
         ):
-
             break
 
         context_parts.append(
@@ -820,7 +1013,6 @@ def clean_telegram_text(
     text: str,
 ):
 
-    # Remove common Markdown formatting
     text = text.replace(
         "**",
         ""
@@ -845,15 +1037,12 @@ def clean_telegram_text(
 
     for line in text.splitlines():
 
-        # Remove Markdown headings:
-        # ### Heading -> Heading
         line = re.sub(
             r"^\s*#{1,6}\s*",
             "",
             line,
         )
 
-        # Convert Markdown bullets into normal bullets
         line = re.sub(
             r"^\s*[-*]\s+",
             "• ",
@@ -868,7 +1057,6 @@ def clean_telegram_text(
         lines
     )
 
-    # Remove excessive blank lines
     cleaned = re.sub(
         r"\n{3,}",
         "\n\n",
@@ -889,6 +1077,7 @@ async def start(
 
     await update.message.reply_text(
         "Hello! 👋\n\n"
+
         "I am an AI assistant powered by "
         "OpenAI GPT-OSS 20B through Groq.\n\n"
 
@@ -899,7 +1088,13 @@ async def start(
         "• TXT files 📝\n"
         "• DOCX files 📘\n\n"
 
-        "Commands:\n"
+        "Task commands:\n"
+        "/tasks - show your tasks\n"
+        "/addtask - add a task\n"
+        "/donetask - complete a task\n"
+        "/deletetask - delete a task\n\n"
+
+        "Other commands:\n"
         "/clear - clear conversation memory\n"
         "/files - show uploaded files\n"
         "/clearfiles - delete uploaded files"
@@ -1006,6 +1201,230 @@ async def clear_files(
 
 
 # ==================================================
+# /tasks
+# ==================================================
+
+async def tasks_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+
+    telegram_user_id = (
+        update.effective_user.id
+    )
+
+    tasks = await get_tasks(
+        telegram_user_id
+    )
+
+    if not tasks:
+
+        await update.message.reply_text(
+            "You don't have any tasks yet."
+        )
+
+        return
+
+    lines = [
+        "✅ Your Tasks",
+        "",
+    ]
+
+    for (
+        task_id,
+        title,
+        status,
+        due_date,
+    ) in tasks:
+
+        if status == "done":
+            icon = "✅"
+        else:
+            icon = "⬜"
+
+        line = (
+            f"{icon} {task_id}. {title}"
+        )
+
+        if due_date:
+
+            line += (
+                f" — due {due_date}"
+            )
+
+        lines.append(
+            line
+        )
+
+    await update.message.reply_text(
+        "\n".join(lines)
+    )
+
+
+# ==================================================
+# /addtask
+# ==================================================
+
+async def add_task_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+
+    telegram_user_id = (
+        update.effective_user.id
+    )
+
+    if not context.args:
+
+        await update.message.reply_text(
+            "Usage:\n"
+            "/addtask Finish calculus homework"
+        )
+
+        return
+
+    title = " ".join(
+        context.args
+    ).strip()
+
+    task_id = await create_task(
+        telegram_user_id,
+        title,
+    )
+
+    logger.info(
+        "Task created user_id=%s task_id=%s",
+        telegram_user_id,
+        task_id,
+    )
+
+    await update.message.reply_text(
+        f"✅ Task added.\n\n"
+        f"{task_id}. {title}"
+    )
+
+
+# ==================================================
+# /donetask
+# ==================================================
+
+async def done_task_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+
+    telegram_user_id = (
+        update.effective_user.id
+    )
+
+    if not context.args:
+
+        await update.message.reply_text(
+            "Usage:\n"
+            "/donetask 3"
+        )
+
+        return
+
+    try:
+
+        task_id = int(
+            context.args[0]
+        )
+
+    except ValueError:
+
+        await update.message.reply_text(
+            "Task ID must be a number."
+        )
+
+        return
+
+    title = await complete_task(
+        telegram_user_id,
+        task_id,
+    )
+
+    if not title:
+
+        await update.message.reply_text(
+            "I couldn't find that open task."
+        )
+
+        return
+
+    logger.info(
+        "Task completed user_id=%s task_id=%s",
+        telegram_user_id,
+        task_id,
+    )
+
+    await update.message.reply_text(
+        f"✅ Completed:\n{title}"
+    )
+
+
+# ==================================================
+# /deletetask
+# ==================================================
+
+async def delete_task_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+
+    telegram_user_id = (
+        update.effective_user.id
+    )
+
+    if not context.args:
+
+        await update.message.reply_text(
+            "Usage:\n"
+            "/deletetask 3"
+        )
+
+        return
+
+    try:
+
+        task_id = int(
+            context.args[0]
+        )
+
+    except ValueError:
+
+        await update.message.reply_text(
+            "Task ID must be a number."
+        )
+
+        return
+
+    title = await delete_task(
+        telegram_user_id,
+        task_id,
+    )
+
+    if not title:
+
+        await update.message.reply_text(
+            "I couldn't find that task."
+        )
+
+        return
+
+    logger.info(
+        "Task deleted user_id=%s task_id=%s",
+        telegram_user_id,
+        task_id,
+    )
+
+    await update.message.reply_text(
+        f"🗑️ Deleted:\n{title}"
+    )
+
+
+# ==================================================
 # SEND LONG TELEGRAM MESSAGE
 # ==================================================
 
@@ -1014,7 +1433,6 @@ async def send_long_message(
     text: str,
 ):
 
-    # Clean Markdown before sending
     text = clean_telegram_text(
         text
     )
@@ -1051,7 +1469,6 @@ async def ask_ai(
             "role": "system",
 
             "content": (
-
                 "You are an AI assistant running "
                 "inside a custom Telegram bot. "
 
@@ -1063,53 +1480,28 @@ async def ask_ai(
 
                 "Give clear, accurate, and useful answers. "
 
-                "IMPORTANT TELEGRAM FORMATTING RULES: "
-
                 "Use plain text only. "
-
-                "Do not use Markdown formatting symbols. "
-
-                "Do not use ** for bold text. "
-
-                "Do not use __ for emphasis. "
-
-                "Do not use # headings. "
-
-                "Do not use backticks. "
 
                 "Do not use Markdown tables. "
 
-                "Do not use vertical-bar table syntax. "
+                "Do not use Markdown formatting symbols "
+                "such as **, __, #, or backticks. "
 
-                "Use simple headings written as normal text. "
+                "Use simple headings, numbered sections, "
+                "and bullet points beginning with •. "
 
-                "Use numbered sections when useful. "
-
-                "Use bullet points beginning with the "
-                "bullet character •. "
-
-                "Keep paragraphs short and easy to read "
+                "Keep paragraphs short and readable "
                 "on a phone screen. "
 
-                "When summarizing a document, start with "
-                "a short overview. "
-
-                "Then explain the important points using "
-                "numbered sections and bullet points. "
-
-                "Keep document summaries reasonably concise "
-                "unless the user asks for more detail. "
-
                 "When document context is provided, "
-                "use it as the primary source for questions "
-                "about the uploaded file. "
+                "use it as the primary source for "
+                "questions about the uploaded document. "
 
-                "Do not invent facts that are not supported "
-                "by the provided document context. "
+                "Do not invent facts that are not "
+                "supported by the document context. "
 
-                "If the document context does not contain "
-                "enough information to answer the question, "
-                "say so clearly."
+                "If the provided document context is "
+                "not sufficient, say so clearly."
             ),
         }
     ]
@@ -1193,14 +1585,6 @@ async def process_user_message(
         )
     )
 
-    logger.info(
-        "Loaded memory user_id=%s "
-        "messages=%s document_context=%s",
-        telegram_user_id,
-        len(history),
-        bool(document_context),
-    )
-
     answer = await ask_ai(
         user_message,
         history,
@@ -1215,8 +1599,6 @@ async def process_user_message(
 
         return
 
-    # Clean before saving too, so old Markdown does not
-    # get reused in future conversation memory.
     answer = clean_telegram_text(
         answer
     )
@@ -1245,7 +1627,7 @@ async def process_user_message(
 
 
 # ==================================================
-# HANDLE TEXT MESSAGE
+# TEXT MESSAGE
 # ==================================================
 
 async def handle_message(
@@ -1272,22 +1654,12 @@ async def handle_message(
 
     except groq.RateLimitError:
 
-        logger.warning(
-            "Groq rate limit user_id=%s",
-            telegram_user_id,
-        )
-
         await update.message.reply_text(
             "The AI rate limit has been reached. "
             "Please try again shortly."
         )
 
     except groq.APITimeoutError:
-
-        logger.warning(
-            "Groq timeout user_id=%s",
-            telegram_user_id,
-        )
 
         await update.message.reply_text(
             "The AI took too long to respond."
@@ -1296,7 +1668,8 @@ async def handle_message(
     except groq.APIConnectionError:
 
         logger.exception(
-            "Groq connection error user_id=%s",
+            "Groq connection error "
+            "user_id=%s",
             telegram_user_id,
         )
 
@@ -1344,15 +1717,11 @@ async def transcribe_voice(
         )
     )
 
-    logger.info(
-        "Voice transcription received"
-    )
-
     return transcription.text
 
 
 # ==================================================
-# HANDLE VOICE MESSAGE
+# VOICE MESSAGE
 # ==================================================
 
 async def handle_voice(
@@ -1369,11 +1738,8 @@ async def handle_voice(
     )
 
     logger.info(
-        "Voice received user_id=%s "
-        "duration=%s size=%s",
+        "Voice received user_id=%s",
         telegram_user_id,
-        voice.duration,
-        voice.file_size,
     )
 
     try:
@@ -1419,12 +1785,6 @@ async def handle_voice(
 
             return
 
-        logger.info(
-            "Voice transcription successful "
-            "user_id=%s",
-            telegram_user_id,
-        )
-
         await update.message.reply_text(
             f"📝 I heard:\n{transcription}"
         )
@@ -1433,25 +1793,6 @@ async def handle_voice(
             update,
             context,
             transcription,
-        )
-
-    except groq.RateLimitError:
-
-        logger.warning(
-            "Voice rate limit user_id=%s",
-            telegram_user_id,
-        )
-
-        await update.message.reply_text(
-            "The AI rate limit has been reached. "
-            "Please try again later."
-        )
-
-    except groq.APITimeoutError:
-
-        await update.message.reply_text(
-            "The voice message took too long "
-            "to process."
         )
 
     except Exception:
@@ -1468,7 +1809,7 @@ async def handle_voice(
 
 
 # ==================================================
-# HANDLE DOCUMENT
+# DOCUMENT MESSAGE
 # ==================================================
 
 async def handle_document(
@@ -1550,30 +1891,24 @@ async def handle_document(
 
         if extension == ".pdf":
 
-            extracted_text = (
-                extract_pdf_text(
-                    file_bytes
-                )
+            extracted_text = extract_pdf_text(
+                file_bytes
             )
 
             file_type = "pdf"
 
         elif extension == ".docx":
 
-            extracted_text = (
-                extract_docx_text(
-                    file_bytes
-                )
+            extracted_text = extract_docx_text(
+                file_bytes
             )
 
             file_type = "docx"
 
         else:
 
-            extracted_text = (
-                extract_txt_text(
-                    file_bytes
-                )
+            extracted_text = extract_txt_text(
+                file_bytes
             )
 
             file_type = "txt"
@@ -1621,12 +1956,11 @@ async def handle_document(
             f"📚 Text chunks stored: "
             f"{len(chunks)}\n\n"
 
-            "You can now ask me things like:\n\n"
+            "You can now ask me:\n\n"
 
             "• Summarize this document\n"
             "• What are the main points?\n"
-            "• What does it say about a topic?\n"
-            "• Explain a specific section\n"
+            "• Explain a section\n"
             "• Find information inside the file"
         )
 
@@ -1644,7 +1978,7 @@ async def handle_document(
 
 
 # ==================================================
-# TELEGRAM STARTUP
+# STARTUP
 # ==================================================
 
 async def post_init(
@@ -1685,6 +2019,11 @@ def main():
         .build()
     )
 
+
+    # ----------------------------------------------
+    # General commands
+    # ----------------------------------------------
+
     application.add_handler(
         CommandHandler(
             "start",
@@ -1698,6 +2037,11 @@ def main():
             clear_memory,
         )
     )
+
+
+    # ----------------------------------------------
+    # Documents
+    # ----------------------------------------------
 
     application.add_handler(
         CommandHandler(
@@ -1713,12 +2057,55 @@ def main():
         )
     )
 
+
+    # ----------------------------------------------
+    # Tasks
+    # ----------------------------------------------
+
+    application.add_handler(
+        CommandHandler(
+            "tasks",
+            tasks_command,
+        )
+    )
+
+    application.add_handler(
+        CommandHandler(
+            "addtask",
+            add_task_command,
+        )
+    )
+
+    application.add_handler(
+        CommandHandler(
+            "donetask",
+            done_task_command,
+        )
+    )
+
+    application.add_handler(
+        CommandHandler(
+            "deletetask",
+            delete_task_command,
+        )
+    )
+
+
+    # ----------------------------------------------
+    # Voice
+    # ----------------------------------------------
+
     application.add_handler(
         MessageHandler(
             filters.VOICE,
             handle_voice,
         )
     )
+
+
+    # ----------------------------------------------
+    # Documents
+    # ----------------------------------------------
 
     application.add_handler(
         MessageHandler(
@@ -1727,6 +2114,11 @@ def main():
         )
     )
 
+
+    # ----------------------------------------------
+    # Text
+    # ----------------------------------------------
+
     application.add_handler(
         MessageHandler(
             filters.TEXT
@@ -1734,6 +2126,7 @@ def main():
             handle_message,
         )
     )
+
 
     logger.info(
         "Starting Telegram polling"
