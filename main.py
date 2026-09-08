@@ -129,14 +129,21 @@ async def initialize_database():
         DATABASE_URL
     ) as connection:
 
+        # ------------------------------------------
         # Conversation memory
+        # ------------------------------------------
+
         await connection.execute(
             """
             CREATE TABLE IF NOT EXISTS messages (
                 id BIGSERIAL PRIMARY KEY,
+
                 telegram_user_id BIGINT NOT NULL,
+
                 role VARCHAR(20) NOT NULL,
+
                 content TEXT NOT NULL,
+
                 created_at TIMESTAMPTZ
                     DEFAULT CURRENT_TIMESTAMP
             )
@@ -147,6 +154,7 @@ async def initialize_database():
             """
             CREATE INDEX IF NOT EXISTS
             idx_messages_user
+
             ON messages (
                 telegram_user_id,
                 id
@@ -154,21 +162,33 @@ async def initialize_database():
             """
         )
 
+
+        # ------------------------------------------
         # Uploaded documents
+        # ------------------------------------------
+
         await connection.execute(
             """
             CREATE TABLE IF NOT EXISTS documents (
                 id BIGSERIAL PRIMARY KEY,
+
                 telegram_user_id BIGINT NOT NULL,
+
                 filename TEXT NOT NULL,
+
                 file_type VARCHAR(20) NOT NULL,
+
                 created_at TIMESTAMPTZ
                     DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
 
-        # Document text chunks
+
+        # ------------------------------------------
+        # Document chunks
+        # ------------------------------------------
+
         await connection.execute(
             """
             CREATE TABLE IF NOT EXISTS document_chunks (
@@ -189,6 +209,7 @@ async def initialize_database():
             """
             CREATE INDEX IF NOT EXISTS
             idx_documents_user
+
             ON documents (
                 telegram_user_id,
                 id
@@ -200,6 +221,7 @@ async def initialize_database():
             """
             CREATE INDEX IF NOT EXISTS
             idx_document_chunks_document
+
             ON document_chunks (
                 document_id,
                 chunk_index
@@ -213,7 +235,7 @@ async def initialize_database():
 
 
 # ==================================================
-# CONVERSATION MEMORY
+# SAVE CONVERSATION MESSAGE
 # ==================================================
 
 async def save_message(
@@ -233,6 +255,7 @@ async def save_message(
                 role,
                 content
             )
+
             VALUES (%s, %s, %s)
             """,
             (
@@ -242,6 +265,10 @@ async def save_message(
             ),
         )
 
+
+# ==================================================
+# LOAD CONVERSATION MEMORY
+# ==================================================
 
 async def load_memory(
     telegram_user_id: int,
@@ -253,10 +280,16 @@ async def load_memory(
 
         cursor = await connection.execute(
             """
-            SELECT role, content
+            SELECT
+                role,
+                content
+
             FROM messages
+
             WHERE telegram_user_id = %s
+
             ORDER BY id DESC
+
             LIMIT %s
             """,
             (
@@ -273,6 +306,7 @@ async def load_memory(
 
     for role, content in rows:
 
+        # Compatibility with old Gemini history
         if role == "model":
             role = "assistant"
 
@@ -293,6 +327,10 @@ async def load_memory(
     return messages
 
 
+# ==================================================
+# DELETE CONVERSATION MEMORY
+# ==================================================
+
 async def delete_memory(
     telegram_user_id: int,
 ):
@@ -304,6 +342,7 @@ async def delete_memory(
         await connection.execute(
             """
             DELETE FROM messages
+
             WHERE telegram_user_id = %s
             """,
             (
@@ -313,7 +352,7 @@ async def delete_memory(
 
 
 # ==================================================
-# DOCUMENT EXTRACTION
+# PDF TEXT EXTRACTION
 # ==================================================
 
 def extract_pdf_text(
@@ -344,6 +383,10 @@ def extract_pdf_text(
     )
 
 
+# ==================================================
+# DOCX TEXT EXTRACTION
+# ==================================================
+
 def extract_docx_text(
     file_bytes: bytes,
 ):
@@ -356,7 +399,9 @@ def extract_docx_text(
 
     for paragraph in document.paragraphs:
 
-        text = paragraph.text.strip()
+        text = (
+            paragraph.text.strip()
+        )
 
         if text:
 
@@ -368,6 +413,10 @@ def extract_docx_text(
         paragraphs
     )
 
+
+# ==================================================
+# TXT TEXT EXTRACTION
+# ==================================================
 
 def extract_txt_text(
     file_bytes: bytes,
@@ -451,7 +500,9 @@ async def save_document(
                 filename,
                 file_type
             )
+
             VALUES (%s, %s, %s)
+
             RETURNING id
             """,
             (
@@ -476,6 +527,7 @@ async def save_document(
                     chunk_index,
                     content
                 )
+
                 VALUES (%s, %s, %s)
                 """,
                 (
@@ -489,7 +541,7 @@ async def save_document(
 
 
 # ==================================================
-# LIST DOCUMENTS
+# LOAD USER DOCUMENTS
 # ==================================================
 
 async def load_documents(
@@ -525,7 +577,7 @@ async def load_documents(
 
 
 # ==================================================
-# DELETE DOCUMENTS
+# DELETE USER DOCUMENTS
 # ==================================================
 
 async def delete_documents(
@@ -539,6 +591,7 @@ async def delete_documents(
         await connection.execute(
             """
             DELETE FROM documents
+
             WHERE telegram_user_id = %s
             """,
             (
@@ -548,7 +601,7 @@ async def delete_documents(
 
 
 # ==================================================
-# SIMPLE DOCUMENT RETRIEVAL
+# SIMPLE DOCUMENT SEARCH
 # ==================================================
 
 STOP_WORDS = {
@@ -603,6 +656,10 @@ def question_words(
     }
 
 
+# ==================================================
+# GET RELEVANT DOCUMENT CONTEXT
+# ==================================================
+
 async def get_document_context(
     telegram_user_id: int,
     question: str,
@@ -627,8 +684,9 @@ async def get_document_context(
 
             WHERE d.telegram_user_id = %s
 
-            ORDER BY d.id DESC,
-                     dc.chunk_index ASC
+            ORDER BY
+                d.id DESC,
+                dc.chunk_index ASC
 
             LIMIT 300
             """,
@@ -640,6 +698,7 @@ async def get_document_context(
         rows = await cursor.fetchall()
 
     if not rows:
+
         return None
 
     q_words = question_words(
@@ -650,21 +709,36 @@ async def get_document_context(
         question.lower()
     )
 
+
+    # ----------------------------------------------
+    # Detect summary-style requests
+    # ----------------------------------------------
+
     summary_request = any(
         phrase in lower_question
+
         for phrase in (
             "summarize",
             "summary",
+            "summarise",
             "this file",
             "this document",
             "the document",
             "the file",
+            "pdf",
         )
     )
 
+
+    # ----------------------------------------------
+    # Score chunks
+    # ----------------------------------------------
+
     scored = []
 
-    newest_document_id = rows[0][0]
+    newest_document_id = (
+        rows[0][0]
+    )
 
     for (
         document_id,
@@ -678,7 +752,9 @@ async def get_document_context(
         )
 
         score = sum(
-            lower_content.count(word)
+            lower_content.count(
+                word
+            )
             for word in q_words
         )
 
@@ -692,13 +768,24 @@ async def get_document_context(
             )
         )
 
+
+    # ----------------------------------------------
+    # Summary = first chunks of newest document
+    # ----------------------------------------------
+
     if summary_request:
 
         selected = [
             item
             for item in scored
-            if item[1] == newest_document_id
+            if item[1]
+            == newest_document_id
         ][:4]
+
+
+    # ----------------------------------------------
+    # Question = best matching chunks
+    # ----------------------------------------------
 
     else:
 
@@ -713,8 +800,15 @@ async def get_document_context(
             if item[0] > 0
         ][:4]
 
+
     if not selected:
+
         return None
+
+
+    # ----------------------------------------------
+    # Build context
+    # ----------------------------------------------
 
     context_parts = []
 
@@ -739,6 +833,7 @@ async def get_document_context(
             + len(section)
             > MAX_DOCUMENT_CONTEXT
         ):
+
             break
 
         context_parts.append(
@@ -750,6 +845,7 @@ async def get_document_context(
         )
 
     if not context_parts:
+
         return None
 
     return "\n\n".join(
@@ -770,12 +866,14 @@ async def start(
         "Hello! 👋\n\n"
         "I am an AI assistant powered by "
         "OpenAI GPT-OSS 20B through Groq.\n\n"
+
         "You can send me:\n"
         "• Text messages 💬\n"
         "• Voice messages 🎤\n"
         "• PDF files 📄\n"
         "• TXT files 📝\n"
         "• DOCX files 📘\n\n"
+
         "Commands:\n"
         "/clear - clear conversation memory\n"
         "/files - show uploaded files\n"
@@ -836,7 +934,7 @@ async def files_command(
         return
 
     lines = [
-        "Your uploaded files:"
+        "📁 Your uploaded files:"
     ]
 
     for (
@@ -921,34 +1019,78 @@ async def ask_ai(
     messages = [
         {
             "role": "system",
+
             "content": (
+
                 "You are an AI assistant running "
                 "inside a custom Telegram bot. "
+
                 "You are powered by OpenAI's "
                 "GPT-OSS 20B model through Groq. "
-                "You are not ChatGPT. "
-                "Give clear and useful answers. "
+
+                "You are not ChatGPT and must not "
+                "claim to be ChatGPT. "
+
+                "Give clear, accurate, and useful answers. "
+
+                "IMPORTANT TELEGRAM FORMATTING RULES: "
+
+                "Do not use Markdown tables. "
+
+                "Do not use table syntax with vertical bars. "
+
+                "Instead use short headings, numbered sections, "
+                "and bullet points. "
+
+                "Keep paragraphs short and easy to read "
+                "on a phone screen. "
+
+                "For lists, prefer bullets beginning with "
+                "• or numbered items. "
+
+                "When summarizing a document, start with "
+                "a short overview. "
+
+                "Then explain the important points using "
+                "numbered sections and bullet points. "
+
+                "Do not make document summaries unnecessarily long "
+                "unless the user asks for detailed analysis. "
+
                 "When document context is provided, "
-                "use it as the primary source for "
-                "questions about the uploaded file. "
-                "Do not invent claims that are not "
-                "supported by the provided document "
-                "context. If the provided context "
-                "does not contain enough information, "
-                "say so."
+                "use it as the primary source for questions "
+                "about the uploaded file. "
+
+                "Do not invent facts that are not supported "
+                "by the provided document context. "
+
+                "If the document context does not contain enough "
+                "information to answer the question, "
+                "say so clearly."
             ),
         }
     ]
 
+
+    # ----------------------------------------------
+    # Conversation history
+    # ----------------------------------------------
+
     messages.extend(
         history
     )
+
+
+    # ----------------------------------------------
+    # Document context
+    # ----------------------------------------------
 
     if document_context:
 
         messages.append(
             {
                 "role": "system",
+
                 "content": (
                     "Relevant uploaded-document "
                     "context follows:\n\n"
@@ -957,6 +1099,11 @@ async def ask_ai(
             }
         )
 
+
+    # ----------------------------------------------
+    # Current question
+    # ----------------------------------------------
+
     messages.append(
         {
             "role": "user",
@@ -964,12 +1111,14 @@ async def ask_ai(
         }
     )
 
+
     logger.info(
         "Sending request model=%s "
         "document_context=%s",
         AI_MODEL,
         bool(document_context),
     )
+
 
     response = (
         await client.chat.completions.create(
@@ -979,6 +1128,7 @@ async def ask_ai(
             max_completion_tokens=1500,
         )
     )
+
 
     return (
         response
@@ -1002,14 +1152,25 @@ async def process_user_message(
         update.effective_user.id
     )
 
+
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id,
         action=ChatAction.TYPING,
     )
 
+
+    # ----------------------------------------------
+    # Load conversation memory
+    # ----------------------------------------------
+
     history = await load_memory(
         telegram_user_id
     )
+
+
+    # ----------------------------------------------
+    # Search uploaded documents
+    # ----------------------------------------------
 
     document_context = (
         await get_document_context(
@@ -1017,6 +1178,7 @@ async def process_user_message(
             user_message,
         )
     )
+
 
     logger.info(
         "Loaded memory user_id=%s "
@@ -1026,11 +1188,17 @@ async def process_user_message(
         bool(document_context),
     )
 
+
+    # ----------------------------------------------
+    # Ask AI
+    # ----------------------------------------------
+
     answer = await ask_ai(
         user_message,
         history,
         document_context,
     )
+
 
     if not answer:
 
@@ -1039,6 +1207,11 @@ async def process_user_message(
         )
 
         return
+
+
+    # ----------------------------------------------
+    # Save conversation
+    # ----------------------------------------------
 
     await save_message(
         telegram_user_id,
@@ -1052,6 +1225,17 @@ async def process_user_message(
         answer,
     )
 
+
+    logger.info(
+        "Conversation saved user_id=%s",
+        telegram_user_id,
+    )
+
+
+    # ----------------------------------------------
+    # Send answer
+    # ----------------------------------------------
+
     await send_long_message(
         update,
         answer,
@@ -1059,7 +1243,7 @@ async def process_user_message(
 
 
 # ==================================================
-# TEXT MESSAGE
+# HANDLE TEXT MESSAGE
 # ==================================================
 
 async def handle_message(
@@ -1084,18 +1268,43 @@ async def handle_message(
             update.message.text,
         )
 
+
     except groq.RateLimitError:
+
+        logger.warning(
+            "Groq rate limit user_id=%s",
+            telegram_user_id,
+        )
 
         await update.message.reply_text(
             "The AI rate limit has been reached. "
             "Please try again shortly."
         )
 
+
     except groq.APITimeoutError:
+
+        logger.warning(
+            "Groq timeout user_id=%s",
+            telegram_user_id,
+        )
 
         await update.message.reply_text(
             "The AI took too long to respond."
         )
+
+
+    except groq.APIConnectionError:
+
+        logger.exception(
+            "Groq connection error user_id=%s",
+            telegram_user_id,
+        )
+
+        await update.message.reply_text(
+            "I couldn't connect to the AI service."
+        )
+
 
     except Exception:
 
@@ -1118,23 +1327,34 @@ async def transcribe_voice(
     audio_bytes: bytes,
 ):
 
+    logger.info(
+        "Sending voice message to Whisper"
+    )
+
     transcription = (
         await client.audio.transcriptions.create(
             file=(
                 "voice.ogg",
                 audio_bytes,
             ),
+
             model=VOICE_MODEL,
+
             response_format="json",
+
             temperature=0.0,
         )
+    )
+
+    logger.info(
+        "Voice transcription received"
     )
 
     return transcription.text
 
 
 # ==================================================
-# VOICE MESSAGE
+# HANDLE VOICE MESSAGE
 # ==================================================
 
 async def handle_voice(
@@ -1146,18 +1366,30 @@ async def handle_voice(
         update.effective_user.id
     )
 
-    voice = update.message.voice
+    voice = (
+        update.message.voice
+    )
+
 
     logger.info(
-        "Voice received user_id=%s",
+        "Voice received user_id=%s "
+        "duration=%s size=%s",
         telegram_user_id,
+        voice.duration,
+        voice.file_size,
     )
+
 
     try:
 
+        # ------------------------------------------
+        # Size limit
+        # ------------------------------------------
+
         if (
             voice.file_size
-            and voice.file_size > MAX_VOICE_SIZE
+            and voice.file_size
+            > MAX_VOICE_SIZE
         ):
 
             await update.message.reply_text(
@@ -1166,9 +1398,15 @@ async def handle_voice(
 
             return
 
+
         await update.message.reply_text(
             "🎤 Listening..."
         )
+
+
+        # ------------------------------------------
+        # Download Telegram voice file
+        # ------------------------------------------
 
         telegram_file = (
             await context.bot.get_file(
@@ -1180,11 +1418,17 @@ async def handle_voice(
             await telegram_file.download_as_bytearray()
         )
 
+
+        # ------------------------------------------
+        # Speech to text
+        # ------------------------------------------
+
         transcription = (
             await transcribe_voice(
                 bytes(audio_data)
             )
         ).strip()
+
 
         if not transcription:
 
@@ -1195,15 +1439,50 @@ async def handle_voice(
 
             return
 
+
+        logger.info(
+            "Voice transcription successful "
+            "user_id=%s",
+            telegram_user_id,
+        )
+
+
         await update.message.reply_text(
             f"📝 I heard:\n{transcription}"
         )
+
+
+        # ------------------------------------------
+        # Send transcription through normal AI flow
+        # ------------------------------------------
 
         await process_user_message(
             update,
             context,
             transcription,
         )
+
+
+    except groq.RateLimitError:
+
+        logger.warning(
+            "Voice rate limit user_id=%s",
+            telegram_user_id,
+        )
+
+        await update.message.reply_text(
+            "The AI rate limit has been reached. "
+            "Please try again later."
+        )
+
+
+    except groq.APITimeoutError:
+
+        await update.message.reply_text(
+            "The voice message took too long "
+            "to process."
+        )
+
 
     except Exception:
 
@@ -1214,13 +1493,12 @@ async def handle_voice(
         )
 
         await update.message.reply_text(
-            "I couldn't process that "
-            "voice message."
+            "I couldn't process that voice message."
         )
 
 
 # ==================================================
-# DOCUMENT MESSAGE
+# HANDLE DOCUMENT
 # ==================================================
 
 async def handle_document(
@@ -1248,6 +1526,7 @@ async def handle_document(
         .lower()
     )
 
+
     logger.info(
         "Document received user_id=%s "
         "filename=%s",
@@ -1255,7 +1534,12 @@ async def handle_document(
         filename,
     )
 
+
     try:
+
+        # ------------------------------------------
+        # File size
+        # ------------------------------------------
 
         if (
             document.file_size
@@ -1268,6 +1552,11 @@ async def handle_document(
             )
 
             return
+
+
+        # ------------------------------------------
+        # Supported formats
+        # ------------------------------------------
 
         if extension not in (
             ".pdf",
@@ -1282,9 +1571,15 @@ async def handle_document(
 
             return
 
+
         await update.message.reply_text(
             "📄 Reading your file..."
         )
+
+
+        # ------------------------------------------
+        # Download file
+        # ------------------------------------------
 
         telegram_file = (
             await context.bot.get_file(
@@ -1300,6 +1595,11 @@ async def handle_document(
             file_data
         )
 
+
+        # ------------------------------------------
+        # Extract text
+        # ------------------------------------------
+
         if extension == ".pdf":
 
             extracted_text = (
@@ -1309,6 +1609,7 @@ async def handle_document(
             )
 
             file_type = "pdf"
+
 
         elif extension == ".docx":
 
@@ -1320,6 +1621,7 @@ async def handle_document(
 
             file_type = "docx"
 
+
         else:
 
             extracted_text = (
@@ -1330,24 +1632,41 @@ async def handle_document(
 
             file_type = "txt"
 
+
         extracted_text = (
             extracted_text.strip()
         )
 
+
+        # ------------------------------------------
+        # No text found
+        # ------------------------------------------
+
         if not extracted_text:
 
             await update.message.reply_text(
-                "I couldn't extract readable "
-                "text from this file. "
-                "If it is a scanned PDF, "
-                "OCR support will be needed."
+                "I couldn't extract readable text "
+                "from this file.\n\n"
+
+                "If it is a scanned PDF made from "
+                "images, OCR support will be needed."
             )
 
             return
 
+
+        # ------------------------------------------
+        # Split into chunks
+        # ------------------------------------------
+
         chunks = chunk_text(
             extracted_text
         )
+
+
+        # ------------------------------------------
+        # Store in PostgreSQL
+        # ------------------------------------------
 
         await save_document(
             telegram_user_id,
@@ -1355,6 +1674,7 @@ async def handle_document(
             file_type,
             chunks,
         )
+
 
         logger.info(
             "Document stored user_id=%s "
@@ -1364,16 +1684,28 @@ async def handle_document(
             len(chunks),
         )
 
+
+        # ------------------------------------------
+        # Tell user
+        # ------------------------------------------
+
         await update.message.reply_text(
             "✅ File processed successfully.\n\n"
-            f"File: {filename}\n"
-            f"Text chunks stored: {len(chunks)}\n\n"
-            "You can now ask me questions such as:\n"
+
+            f"📄 File: {filename}\n"
+
+            f"📚 Text chunks stored: "
+            f"{len(chunks)}\n\n"
+
+            "You can now ask me things like:\n\n"
+
             "• Summarize this document\n"
-            "• What does it say about X?\n"
-            "• Explain section Y\n"
-            "• Find information about Z"
+            "• What are the main points?\n"
+            "• What does it say about a topic?\n"
+            "• Explain a specific section\n"
+            "• Find information inside the file"
         )
+
 
     except Exception:
 
@@ -1389,7 +1721,7 @@ async def handle_document(
 
 
 # ==================================================
-# STARTUP
+# TELEGRAM STARTUP
 # ==================================================
 
 async def post_init(
@@ -1423,12 +1755,18 @@ def main():
         VOICE_MODEL,
     )
 
+
     application = (
         Application.builder()
         .token(TELEGRAM_TOKEN)
         .post_init(post_init)
         .build()
     )
+
+
+    # ----------------------------------------------
+    # Commands
+    # ----------------------------------------------
 
     application.add_handler(
         CommandHandler(
@@ -1458,12 +1796,22 @@ def main():
         )
     )
 
+
+    # ----------------------------------------------
+    # Voice messages
+    # ----------------------------------------------
+
     application.add_handler(
         MessageHandler(
             filters.VOICE,
             handle_voice,
         )
     )
+
+
+    # ----------------------------------------------
+    # Documents
+    # ----------------------------------------------
 
     application.add_handler(
         MessageHandler(
@@ -1472,6 +1820,11 @@ def main():
         )
     )
 
+
+    # ----------------------------------------------
+    # Normal text
+    # ----------------------------------------------
+
     application.add_handler(
         MessageHandler(
             filters.TEXT
@@ -1479,6 +1832,7 @@ def main():
             handle_message,
         )
     )
+
 
     logger.info(
         "Starting Telegram polling"
