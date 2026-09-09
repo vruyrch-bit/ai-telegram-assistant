@@ -1,6 +1,51 @@
+# Environment variables / secrets
 .env
+.env.*
+!.env.example
+
+# Python
 venv/
+.venv/
 __pycache__/
-*.pyc
-memory.db
+*.py[cod]
+*.pyo
+
+# Testing
 .pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+memory.db
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Model/cache directories if created locally
+.cache/
+fastembed_cache/
+models/
