@@ -70,6 +70,9 @@ from services.vision import (
     analyze_image_with_vision,
     process_image_upload,
 )
+from services.voice import (
+    transcribe_voice,
+)
 from config import (
     AI_MODEL,
     VOICE_MODEL,
@@ -1325,22 +1328,6 @@ async def handle_message(
         )
 
 
-async def transcribe_voice(
-    audio_bytes: bytes,
-):
-    transcription = (
-        await client.audio.transcriptions.create(
-            file=(
-                "voice.ogg",
-                audio_bytes,
-            ),
-            model=VOICE_MODEL,
-            response_format="json",
-            temperature=0.0,
-        )
-    )
-
-    return transcription.text
 
 
 async def handle_voice(
