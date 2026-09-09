@@ -393,19 +393,23 @@ async def memory_command(
         "",
     ]
 
-    for (
-        memory_id,
-        content,
-        memory_type,
-        importance,
-        source,
-        created_at,
-        updated_at,
-    ) in memories:
+    for display_number, memory in enumerate(
+        memories,
+        start=1,
+    ):
+        (
+            memory_id,
+            content,
+            memory_type,
+            importance,
+            source,
+            created_at,
+            updated_at,
+        ) = memory
 
         lines.append(
             (
-                f"{memory_id}. {content}\n"
+                f"{display_number}. {content}\n"
                 f"   Type: {memory_type} | "
                 f"Importance: {importance}/5"
             )
@@ -432,20 +436,42 @@ async def forget_command(
         return
 
     try:
-        memory_id = int(
+        display_number = int(
             context.args[0]
         )
 
     except ValueError:
         await update.message.reply_text(
-            "Memory ID must be a number."
+            "Memory number must be a number."
         )
         return
+
+    memories = (
+        await list_long_term_memories(
+            telegram_user_id,
+            limit=50,
+        )
+    )
+
+    if (
+        display_number < 1
+        or display_number > len(memories)
+    ):
+        await update.message.reply_text(
+            "I couldn't find that memory."
+        )
+        return
+
+    real_memory_id = (
+        memories[
+            display_number - 1
+        ][0]
+    )
 
     forgotten = (
         await forget_long_term_memory(
             telegram_user_id,
-            memory_id,
+            real_memory_id,
         )
     )
 
