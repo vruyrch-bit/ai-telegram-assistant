@@ -20,5 +20,6 @@ COPY rag ./rag
 COPY services ./services
 COPY tools ./tools
 COPY bot ./bot
+COPY utils ./utils
 
 CMD ["python", "main.py"]
