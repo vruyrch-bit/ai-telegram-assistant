@@ -7,6 +7,7 @@ from database.long_term_memory import (
     list_long_term_memories_with_embeddings,
     get_long_term_memory,
     save_long_term_memory,
+    replace_long_term_memory,
 )
 
 from rag.embeddings import (
@@ -127,6 +128,51 @@ async def remember_user_memory(
         content,
         memory_type=memory_type,
         importance=importance,
+        embedding=embedding,
+        source=source,
+    )
+
+
+async def replace_user_memory(
+    telegram_user_id: int,
+    memory_id: int,
+    content: str,
+    memory_type: str,
+    importance: int = 3,
+    source: str = "automatic",
+):
+    content = content.strip()
+
+    if not content:
+        raise ValueError(
+            "Memory content cannot be empty."
+        )
+
+    embedding = None
+
+    try:
+        embeddings = await asyncio.to_thread(
+            generate_passage_embeddings,
+            [content],
+        )
+
+        if embeddings:
+            embedding = embeddings[0]
+
+    except Exception:
+        logger.exception(
+            "Replacement memory embedding failed "
+            "user_id=%s memory_id=%s",
+            telegram_user_id,
+            memory_id,
+        )
+
+    return await replace_long_term_memory(
+        telegram_user_id,
+        memory_id,
+        content,
+        memory_type,
+        importance,
         embedding=embedding,
         source=source,
     )
@@ -416,7 +462,8 @@ async def build_memory_context(
     for memory in memories:
         lines.append(
             (
-                f"• {memory['content']} "
+                f"• [memory_id={memory['id']}] "
+                f"{memory['content']} "
                 f"[type={memory['memory_type']}, "
                 f"importance={memory['importance']}/5]"
             )

@@ -471,3 +471,98 @@ async def list_long_term_memories_with_embeddings(
             rows = await cursor.fetchall()
 
     return rows
+
+
+# ==================================================
+# REPLACE MEMORY
+# ==================================================
+
+async def replace_long_term_memory(
+    telegram_user_id: int,
+    memory_id: int,
+    content: str,
+    memory_type: str,
+    importance: int,
+    embedding=None,
+    source: str = "automatic",
+):
+    content = content.strip()
+
+    if not content:
+        raise ValueError(
+            "Memory content cannot be empty."
+        )
+
+    importance = max(
+        1,
+        min(
+            int(importance),
+            5,
+        ),
+    )
+
+    content_hash = memory_content_hash(
+        content
+    )
+
+    embedding_json = None
+
+    if embedding is not None:
+        embedding_json = json.dumps(
+            [
+                float(value)
+                for value in embedding
+            ]
+        )
+
+    async with await psycopg.AsyncConnection.connect(
+        DATABASE_URL
+    ) as connection:
+
+        async with connection.cursor() as cursor:
+
+            await cursor.execute(
+                """
+                UPDATE long_term_memories
+
+                SET
+                    content = %s,
+                    memory_type = %s,
+                    importance = %s,
+                    content_hash = %s,
+                    embedding = %s,
+                    embedding_model = %s,
+                    source = %s,
+                    updated_at = NOW()
+
+                WHERE telegram_user_id = %s
+                AND id = %s
+                AND is_active = TRUE
+
+                RETURNING id
+                """,
+                (
+                    content,
+                    memory_type,
+                    importance,
+                    content_hash,
+                    embedding_json,
+                    (
+                        EMBEDDING_MODEL_NAME
+                        if embedding is not None
+                        else None
+                    ),
+                    source,
+                    telegram_user_id,
+                    memory_id,
+                ),
+            )
+
+            row = await cursor.fetchone()
+
+        await connection.commit()
+
+    if not row:
+        return None
+
+    return row[0]

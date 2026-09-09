@@ -3,6 +3,7 @@ import re
 
 from services.memory import (
     remember_user_memory,
+    replace_user_memory,
 )
 
 
@@ -60,12 +61,65 @@ MEMORY_TOOLS = [
                 "additionalProperties": False,
             },
         },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replace_memory",
+            "description": (
+                "Replace an existing long-term memory when the "
+                "user clearly corrects, changes, or updates it. "
+                "Use the memory_id from the provided long-term "
+                "memory context. Do not use this just because "
+                "two memories are somewhat related."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "integer",
+                        "description": (
+                            "ID of the existing memory to replace."
+                        ),
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": (
+                            "The new concise standalone memory."
+                        ),
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": [
+                            "preference",
+                            "goal",
+                            "project",
+                            "workflow",
+                            "stable_fact",
+                        ],
+                    },
+                    "importance": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                    },
+                },
+                "required": [
+                    "memory_id",
+                    "content",
+                    "memory_type",
+                    "importance",
+                ],
+                "additionalProperties": False,
+            },
+        },
     }
 ]
 
 
 MEMORY_TOOL_NAMES = {
     "remember_memory",
+    "replace_memory",
 }
 
 
@@ -152,7 +206,7 @@ async def execute_memory_tool(
     tool_name: str,
     arguments: dict,
 ):
-    if tool_name != "remember_memory":
+    if tool_name not in MEMORY_TOOL_NAMES:
         return json.dumps(
             {
                 "success": False,
@@ -225,9 +279,54 @@ async def execute_memory_tool(
             }
         )
 
-    memory_id = (
-        await remember_user_memory(
+    if tool_name == "remember_memory":
+        memory_id = (
+            await remember_user_memory(
+                telegram_user_id,
+                content,
+                memory_type=memory_type,
+                importance=importance,
+                source="automatic",
+            )
+        )
+
+        return json.dumps(
+            {
+                "success": True,
+                "memory_id": memory_id,
+                "content": content,
+                "memory_type": memory_type,
+                "importance": importance,
+                "operation": "remembered",
+            },
+            ensure_ascii=False,
+        )
+
+    try:
+        memory_id = int(
+            arguments.get(
+                "memory_id"
+            )
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return json.dumps(
+            {
+                "success": False,
+                "error": (
+                    "A valid numeric memory ID "
+                    "is required."
+                ),
+            }
+        )
+
+    replaced_id = (
+        await replace_user_memory(
             telegram_user_id,
+            memory_id,
             content,
             memory_type=memory_type,
             importance=importance,
@@ -235,13 +334,26 @@ async def execute_memory_tool(
         )
     )
 
+    if not replaced_id:
+        return json.dumps(
+            {
+                "success": False,
+                "error": (
+                    "The memory to replace "
+                    "was not found."
+                ),
+            }
+        )
+
     return json.dumps(
         {
             "success": True,
-            "memory_id": memory_id,
+            "memory_id": replaced_id,
             "content": content,
             "memory_type": memory_type,
             "importance": importance,
+            "operation": "replaced",
         },
         ensure_ascii=False,
     )
+
