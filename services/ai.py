@@ -68,6 +68,16 @@ SYSTEM_PROMPT = (
                 "information, health information, precise location, "
                 "or other sensitive personal information. "
                 "Do not create a memory merely because the user "
+                "When relevant long-term memory contains a memory_id, "
+                "and the user clearly corrects, changes, or replaces "
+                "that information, you MUST use replace_memory rather "
+                "than remember_memory. For example, if memory says the "
+                "user prefers concise answers and the user now says they "
+                "prefer detailed answers, replace the old memory. "
+                "Use the exact memory_id supplied in the memory context. "
+                "Do not leave contradictory versions of the same "
+                "preference or stable fact active. "
+
                 "mentioned something once if it is unlikely to "
                 "matter later. Prefer concise standalone memories. "
 
