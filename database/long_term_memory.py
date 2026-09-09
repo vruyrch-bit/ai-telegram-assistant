@@ -416,3 +416,58 @@ async def clear_long_term_memories(
         await connection.commit()
 
     return affected
+
+
+# ==================================================
+# LIST MEMORIES WITH EMBEDDINGS
+# ==================================================
+
+async def list_long_term_memories_with_embeddings(
+    telegram_user_id: int,
+    limit: int = 100,
+):
+    limit = max(
+        1,
+        min(
+            int(limit),
+            200,
+        ),
+    )
+
+    async with await psycopg.AsyncConnection.connect(
+        DATABASE_URL
+    ) as connection:
+
+        async with connection.cursor() as cursor:
+
+            await cursor.execute(
+                """
+                SELECT
+                    id,
+                    content,
+                    memory_type,
+                    importance,
+                    embedding,
+                    embedding_model,
+                    source,
+                    updated_at
+                FROM long_term_memories
+
+                WHERE telegram_user_id = %s
+                AND is_active = TRUE
+
+                ORDER BY
+                    importance DESC,
+                    updated_at DESC
+
+                LIMIT %s
+                """,
+                (
+                    telegram_user_id,
+                    limit,
+                ),
+            )
+
+            rows = await cursor.fetchall()
+
+    return rows

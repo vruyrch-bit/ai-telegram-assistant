@@ -4,6 +4,7 @@ import logging
 
 from database.long_term_memory import (
     list_long_term_memories,
+    list_long_term_memories_with_embeddings,
     get_long_term_memory,
     save_long_term_memory,
 )
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 MEMORY_RETRIEVAL_LIMIT = 5
 MEMORY_CANDIDATE_LIMIT = 100
 MIN_MEMORY_SIMILARITY = 0.35
+MEMORY_DUPLICATE_THRESHOLD = 0.93
 
 
 async def remember_user_memory(
@@ -30,6 +32,13 @@ async def remember_user_memory(
     importance: int = 3,
     source: str = "explicit_user",
 ):
+    content = content.strip()
+
+    if not content:
+        raise ValueError(
+            "Memory content cannot be empty."
+        )
+
     embedding = None
 
     try:
@@ -48,6 +57,71 @@ async def remember_user_memory(
             telegram_user_id,
         )
 
+    if embedding is not None:
+        duplicate = (
+            await find_semantic_duplicate(
+                telegram_user_id,
+                embedding,
+            )
+        )
+
+        if duplicate:
+            logger.info(
+                "Semantic memory duplicate suppressed "
+                "user_id=%s existing_memory_id=%s "
+                "similarity=%.3f",
+                telegram_user_id,
+                duplicate["id"],
+                duplicate["similarity"],
+            )
+
+            existing_type = (
+                duplicate["memory_type"]
+            )
+
+            resolved_type = (
+                memory_type
+                if (
+                    existing_type
+                    in {
+                        "fact",
+                        "stable_fact",
+                    }
+                    and memory_type
+                    not in {
+                        "fact",
+                        "stable_fact",
+                    }
+                )
+                else existing_type
+            )
+
+            resolved_importance = max(
+                int(
+                    duplicate[
+                        "importance"
+                    ]
+                ),
+                int(importance),
+            )
+
+            resolved_source = (
+                "explicit_user"
+                if source == "explicit_user"
+                else duplicate["source"]
+            )
+
+            await save_long_term_memory(
+                telegram_user_id,
+                duplicate["content"],
+                memory_type=resolved_type,
+                importance=resolved_importance,
+                embedding=duplicate["embedding"],
+                source=resolved_source,
+            )
+
+            return duplicate["id"]
+
     return await save_long_term_memory(
         telegram_user_id,
         content,
@@ -56,7 +130,6 @@ async def remember_user_memory(
         embedding=embedding,
         source=source,
     )
-
 
 def parse_memory_embedding(
     raw_embedding,
@@ -77,6 +150,101 @@ def parse_memory_embedding(
             return None
 
     return raw_embedding
+
+
+async def find_semantic_duplicate(
+    telegram_user_id: int,
+    new_embedding,
+):
+    memories = (
+        await list_long_term_memories_with_embeddings(
+            telegram_user_id,
+            limit=MEMORY_CANDIDATE_LIMIT,
+        )
+    )
+
+    best_match = None
+
+    for (
+        memory_id,
+        content,
+        memory_type,
+        importance,
+        raw_embedding,
+        embedding_model,
+        source,
+        updated_at,
+    ) in memories:
+
+        embedding = (
+            parse_memory_embedding(
+                raw_embedding
+            )
+        )
+
+        if embedding is None:
+            try:
+                generated = (
+                    await asyncio.to_thread(
+                        generate_passage_embeddings,
+                        [content],
+                    )
+                )
+
+                if generated:
+                    embedding = generated[0]
+
+                    await save_long_term_memory(
+                        telegram_user_id,
+                        content,
+                        memory_type=memory_type,
+                        importance=importance,
+                        embedding=embedding,
+                        source=source,
+                    )
+
+            except Exception:
+                logger.exception(
+                    "Duplicate-check embedding "
+                    "backfill failed "
+                    "user_id=%s memory_id=%s",
+                    telegram_user_id,
+                    memory_id,
+                )
+
+                continue
+
+        if embedding is None:
+            continue
+
+        similarity = cosine_similarity(
+            new_embedding,
+            embedding,
+        )
+
+        if (
+            best_match is None
+            or similarity
+            > best_match["similarity"]
+        ):
+            best_match = {
+                "id": memory_id,
+                "content": content,
+                "memory_type": memory_type,
+                "importance": importance,
+                "embedding": embedding,
+                "source": source,
+                "similarity": similarity,
+            }
+
+    if (
+        best_match
+        and best_match["similarity"]
+        >= MEMORY_DUPLICATE_THRESHOLD
+    ):
+        return best_match
+
+    return None
 
 
 async def retrieve_relevant_memories(
