@@ -21,6 +21,12 @@ from database.tasks import (
     delete_task,
 )
 
+from database.long_term_memory import (
+    save_long_term_memory,
+    list_long_term_memories,
+    forget_long_term_memory,
+)
+
 
 async def start(
     update: Update,
