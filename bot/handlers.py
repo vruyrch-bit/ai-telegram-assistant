@@ -27,6 +27,10 @@ from services.ai import (
     ask_ai,
 )
 
+from services.memory import (
+    build_memory_context,
+)
+
 from services.vision import (
     should_use_latest_image,
     analyze_image_with_vision,
@@ -119,6 +123,13 @@ async def process_user_message(
         telegram_user_id
     )
 
+    memory_context = (
+        await build_memory_context(
+            telegram_user_id,
+            user_message,
+        )
+    )
+
     document_context = (
         await get_document_context(
             telegram_user_id,
@@ -131,6 +142,7 @@ async def process_user_message(
         user_message,
         history,
         document_context,
+        memory_context,
     )
 
     if not answer:

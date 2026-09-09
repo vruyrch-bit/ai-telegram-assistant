@@ -63,6 +63,7 @@ async def ask_ai(
     user_message: str,
     history,
     document_context=None,
+    memory_context=None,
 ):
     messages = [
         {
@@ -74,6 +75,23 @@ async def ask_ai(
     messages.extend(
         history
     )
+
+    if memory_context:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Relevant long-term memories about the "
+                    "user follow. Use them only when they are "
+                    "helpful to the current request. Do not "
+                    "force unrelated memories into the answer. "
+                    "If a memory conflicts with what the user "
+                    "says now, prefer the user's current "
+                    "message.\n\n"
+                    + memory_context
+                ),
+            }
+        )
 
     if document_context:
         messages.append(

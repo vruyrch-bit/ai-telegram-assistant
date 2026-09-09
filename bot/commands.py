@@ -27,6 +27,10 @@ from database.long_term_memory import (
     forget_long_term_memory,
 )
 
+from services.memory import (
+    remember_user_memory,
+)
+
 
 async def start(
     update: Update,
@@ -347,7 +351,7 @@ async def remember_command(
     ).strip()
 
     memory_id = (
-        await save_long_term_memory(
+        await remember_user_memory(
             telegram_user_id,
             content,
             memory_type="fact",
