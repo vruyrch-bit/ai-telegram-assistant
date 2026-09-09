@@ -157,6 +157,28 @@ def build_application():
         )
     )
 
+
+    application.add_handler(
+        CommandHandler(
+            "remember",
+            remember_command,
+        )
+    )
+
+    application.add_handler(
+        CommandHandler(
+            "memory",
+            memory_command,
+        )
+    )
+
+    application.add_handler(
+        CommandHandler(
+            "forget",
+            forget_command,
+        )
+    )
+
     application.add_handler(
         MessageHandler(
             filters.VOICE,
