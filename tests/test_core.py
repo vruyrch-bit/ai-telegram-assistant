@@ -27,6 +27,7 @@ os.environ.setdefault(
 
 
 import main
+from tools import task_tools as task_tools_module
 
 
 # ==================================================
@@ -362,7 +363,7 @@ async def test_create_task_tool(
 
 
     monkeypatch.setattr(
-        main,
+        task_tools_module,
         "create_task",
         fake_create_task,
     )
@@ -420,7 +421,7 @@ async def test_list_tasks_tool(
 
 
     monkeypatch.setattr(
-        main,
+        task_tools_module,
         "get_tasks",
         fake_get_tasks,
     )
@@ -460,7 +461,7 @@ async def test_complete_task_tool(
 
 
     monkeypatch.setattr(
-        main,
+        task_tools_module,
         "complete_task",
         fake_complete_task,
     )
@@ -498,7 +499,7 @@ async def test_delete_task_tool(
 
 
     monkeypatch.setattr(
-        main,
+        task_tools_module,
         "delete_task",
         fake_delete_task,
     )

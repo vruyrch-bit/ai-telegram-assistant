@@ -18,5 +18,6 @@ COPY config.py .
 COPY database ./database
 COPY rag ./rag
 COPY services ./services
+COPY tools ./tools
 
 CMD ["python", "main.py"]
