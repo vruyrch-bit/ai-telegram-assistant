@@ -109,6 +109,10 @@ from bot.handlers import (
 from bot.document_handler import (
     handle_document,
 )
+
+from bot.app import (
+    run_bot,
+)
 from config import (
     AI_MODEL,
     VOICE_MODEL,
@@ -411,146 +415,6 @@ STOP_WORDS = {
 # STARTUP
 # ==================================================
 
-async def post_init(
-    application: Application,
-):
-    await initialize_database()
-
-    logger.info(
-        "Telegram bot initialization complete"
-    )
-
-
-def main():
-    logger.info(
-        "Starting AI Telegram Bot"
-    )
-
-    logger.info(
-        "Text model=%s",
-        AI_MODEL,
-    )
-
-    logger.info(
-        "Voice model=%s",
-        VOICE_MODEL,
-    )
-
-    logger.info(
-        "Vision model=%s",
-        VISION_MODEL,
-    )
-
-    logger.info(
-        "Embedding model=%s",
-        EMBEDDING_MODEL_NAME,
-    )
-
-    application = (
-        Application.builder()
-        .token(TELEGRAM_TOKEN)
-        .post_init(post_init)
-        .build()
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "start",
-            start,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "clear",
-            clear_memory,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "files",
-            files_command,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "clearfiles",
-            clear_files,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "clearimage",
-            clear_image_command,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "tasks",
-            tasks_command,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "addtask",
-            add_task_command,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "donetask",
-            done_task_command,
-        )
-    )
-
-    application.add_handler(
-        CommandHandler(
-            "deletetask",
-            delete_task_command,
-        )
-    )
-
-    application.add_handler(
-        MessageHandler(
-            filters.VOICE,
-            handle_voice,
-        )
-    )
-
-    application.add_handler(
-        MessageHandler(
-            filters.PHOTO,
-            handle_photo,
-        )
-    )
-
-    application.add_handler(
-        MessageHandler(
-            filters.Document.ALL,
-            handle_document,
-        )
-    )
-
-    application.add_handler(
-        MessageHandler(
-            filters.TEXT
-            & ~filters.COMMAND,
-            handle_message,
-        )
-    )
-
-    logger.info(
-        "Starting Telegram polling"
-    )
-
-    application.run_polling()
-
 
 if __name__ == "__main__":
-    main()
+    run_bot()
