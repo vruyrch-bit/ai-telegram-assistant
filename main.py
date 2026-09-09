@@ -59,6 +59,10 @@ from services.ocr import (
     ocr_pdf_page,
     extract_pdf_text_with_ocr,
 )
+from services.document_parser import (
+    extract_docx_text,
+    extract_txt_text,
+)
 from config import (
     AI_MODEL,
     VOICE_MODEL,
@@ -794,45 +798,8 @@ async def process_image_upload(
 # DOCX / TXT EXTRACTION
 # ==================================================
 
-def extract_docx_text(
-    file_bytes: bytes,
-):
-    document = Document(
-        io.BytesIO(
-            file_bytes
-        )
-    )
-
-    paragraphs = []
-
-    for paragraph in document.paragraphs:
-        text = (
-            paragraph.text.strip()
-        )
-
-        if text:
-            paragraphs.append(
-                text
-            )
-
-    return "\n\n".join(
-        paragraphs
-    )
 
 
-def extract_txt_text(
-    file_bytes: bytes,
-):
-    try:
-        return file_bytes.decode(
-            "utf-8"
-        )
-
-    except UnicodeDecodeError:
-        return file_bytes.decode(
-            "latin-1",
-            errors="ignore",
-        )
 
 
 # ==================================================
