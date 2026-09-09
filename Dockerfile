@@ -19,5 +19,6 @@ COPY database ./database
 COPY rag ./rag
 COPY services ./services
 COPY tools ./tools
+COPY bot ./bot
 
 CMD ["python", "main.py"]

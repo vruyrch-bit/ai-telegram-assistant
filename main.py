@@ -81,6 +81,18 @@ from tools.task_tools import (
 from services.ai import (
     ask_ai,
 )
+
+from bot.commands import (
+    start,
+    clear_memory,
+    files_command,
+    clear_files,
+    clear_image_command,
+    tasks_command,
+    add_task_command,
+    done_task_command,
+    delete_task_command,
+)
 from config import (
     AI_MODEL,
     VOICE_MODEL,
@@ -415,296 +427,22 @@ async def send_long_message(
 # COMMANDS
 # ==================================================
 
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    await update.message.reply_text(
-        "Hello! 👋\n\n"
-        "I am Vruyr's custom AI assistant.\n\n"
-        "Features:\n"
-        "• AI chat 💬\n"
-        "• Conversation memory 🧠\n"
-        "• Voice messages 🎤\n"
-        "• Semantic document search 🔎\n"
-        "• Normal and scanned PDF OCR 📄\n"
-        "• Photo and screenshot understanding 🖼️\n"
-        "• Image text reading 👁️\n"
-        "• DOCX and TXT files 📝\n"
-        "• AI task management ✅\n\n"
-        "Send a photo first, then send a separate instruction such as:\n"
-        "• What is in this image?\n"
-        "• Read the text in this screenshot\n"
-        "• Explain this diagram\n"
-        "• What objects do you see?\n\n"
-        "Commands:\n"
-        "/tasks - show tasks\n"
-        "/addtask - add a task\n"
-        "/donetask - complete a task\n"
-        "/deletetask - delete a task\n"
-        "/files - show uploaded files\n"
-        "/clearfiles - delete uploaded files\n"
-        "/clearimage - forget the latest image\n"
-        "/clear - clear conversation memory"
-    )
 
 
-async def clear_memory(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    telegram_user_id = (
-        update.effective_user.id
-    )
-
-    await delete_memory(
-        telegram_user_id
-    )
-
-    await update.message.reply_text(
-        "Conversation memory cleared. 🧹"
-    )
 
 
-async def files_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    telegram_user_id = (
-        update.effective_user.id
-    )
-
-    documents = await load_documents(
-        telegram_user_id
-    )
-
-    if not documents:
-        await update.message.reply_text(
-            "You haven't uploaded any files yet."
-        )
-        return
-
-    lines = [
-        "📁 Your uploaded files:",
-        "",
-    ]
-
-    for (
-        document_id,
-        filename,
-        file_type,
-        created_at,
-    ) in documents:
-        lines.append(
-            f"• {filename}"
-        )
-
-    await update.message.reply_text(
-        "\n".join(lines)
-    )
 
 
-async def clear_files(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    telegram_user_id = (
-        update.effective_user.id
-    )
-
-    await delete_documents(
-        telegram_user_id
-    )
-
-    await update.message.reply_text(
-        "Uploaded documents deleted. 🗑️"
-    )
 
 
-async def clear_image_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    telegram_user_id = (
-        update.effective_user.id
-    )
-
-    await delete_latest_image(
-        telegram_user_id
-    )
-
-    await update.message.reply_text(
-        "Latest image cleared. 🧹"
-    )
 
 
-async def tasks_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    telegram_user_id = (
-        update.effective_user.id
-    )
-
-    tasks = await get_tasks(
-        telegram_user_id
-    )
-
-    if not tasks:
-        await update.message.reply_text(
-            "You don't have any tasks yet."
-        )
-        return
-
-    lines = [
-        "✅ Your Tasks",
-        "",
-    ]
-
-    for (
-        task_id,
-        title,
-        status,
-        due_date,
-    ) in tasks:
-        icon = (
-            "✅"
-            if status == "done"
-            else "⬜"
-        )
-
-        line = (
-            f"{icon} "
-            f"{task_id}. "
-            f"{title}"
-        )
-
-        if due_date:
-            line += (
-                f" — due {due_date}"
-            )
-
-        lines.append(
-            line
-        )
-
-    await update.message.reply_text(
-        "\n".join(lines)
-    )
 
 
-async def add_task_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    telegram_user_id = (
-        update.effective_user.id
-    )
-
-    if not context.args:
-        await update.message.reply_text(
-            "Usage:\n"
-            "/addtask Finish calculus homework"
-        )
-        return
-
-    title = " ".join(
-        context.args
-    ).strip()
-
-    task_id = await create_task(
-        telegram_user_id,
-        title,
-    )
-
-    await update.message.reply_text(
-        f"✅ Task added.\n\n"
-        f"{task_id}. {title}"
-    )
 
 
-async def done_task_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    telegram_user_id = (
-        update.effective_user.id
-    )
-
-    if not context.args:
-        await update.message.reply_text(
-            "Usage:\n"
-            "/donetask 3"
-        )
-        return
-
-    try:
-        task_id = int(
-            context.args[0]
-        )
-
-    except ValueError:
-        await update.message.reply_text(
-            "Task ID must be a number."
-        )
-        return
-
-    title = await complete_task(
-        telegram_user_id,
-        task_id,
-    )
-
-    if not title:
-        await update.message.reply_text(
-            "I couldn't find that open task."
-        )
-        return
-
-    await update.message.reply_text(
-        f"✅ Completed:\n{title}"
-    )
 
 
-async def delete_task_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    telegram_user_id = (
-        update.effective_user.id
-    )
-
-    if not context.args:
-        await update.message.reply_text(
-            "Usage:\n"
-            "/deletetask 3"
-        )
-        return
-
-    try:
-        task_id = int(
-            context.args[0]
-        )
-
-    except ValueError:
-        await update.message.reply_text(
-            "Task ID must be a number."
-        )
-        return
-
-    title = await delete_task(
-        telegram_user_id,
-        task_id,
-    )
-
-    if not title:
-        await update.message.reply_text(
-            "I couldn't find that task."
-        )
-        return
-
-    await update.message.reply_text(
-        f"🗑️ Deleted:\n{title}"
-    )
 
 
 # ==================================================
