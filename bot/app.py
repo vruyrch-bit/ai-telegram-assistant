@@ -34,6 +34,9 @@ from bot.commands import (
     add_task_command,
     done_task_command,
     delete_task_command,
+    remember_command,
+    memory_command,
+    forget_command,
 )
 
 from bot.handlers import (

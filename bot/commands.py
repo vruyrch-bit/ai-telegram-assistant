@@ -49,6 +49,9 @@ async def start(
         "/addtask - add a task\n"
         "/donetask - complete a task\n"
         "/deletetask - delete a task\n"
+        "/remember - save a long-term memory\n"
+        "/memory - show long-term memories\n"
+        "/forget - forget one memory\n"
         "/files - show uploaded files\n"
         "/clearfiles - delete uploaded files\n"
         "/clearimage - forget the latest image\n"
@@ -311,4 +314,138 @@ async def delete_task_command(
 
     await update.message.reply_text(
         f"🗑️ Deleted:\n{title}"
+    )
+
+
+# ==================================================
+# LONG-TERM MEMORY COMMANDS
+# ==================================================
+
+async def remember_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    telegram_user_id = (
+        update.effective_user.id
+    )
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage:\n"
+            "/remember I prefer concise answers"
+        )
+        return
+
+    content = " ".join(
+        context.args
+    ).strip()
+
+    memory_id = (
+        await save_long_term_memory(
+            telegram_user_id,
+            content,
+            memory_type="fact",
+            importance=3,
+            source="explicit_user",
+        )
+    )
+
+    await update.message.reply_text(
+        "🧠 Remembered.\n\n"
+        f"{memory_id}. {content}"
+    )
+
+
+async def memory_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    telegram_user_id = (
+        update.effective_user.id
+    )
+
+    memories = (
+        await list_long_term_memories(
+            telegram_user_id,
+            limit=50,
+        )
+    )
+
+    if not memories:
+        await update.message.reply_text(
+            "I don't have any long-term "
+            "memories saved for you yet."
+        )
+        return
+
+    lines = [
+        "🧠 Long-term memory",
+        "",
+    ]
+
+    for (
+        memory_id,
+        content,
+        memory_type,
+        importance,
+        source,
+        created_at,
+        updated_at,
+    ) in memories:
+
+        lines.append(
+            (
+                f"{memory_id}. {content}\n"
+                f"   Type: {memory_type} | "
+                f"Importance: {importance}/5"
+            )
+        )
+
+    await update.message.reply_text(
+        "\n\n".join(lines)
+    )
+
+
+async def forget_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    telegram_user_id = (
+        update.effective_user.id
+    )
+
+    if not context.args:
+        await update.message.reply_text(
+            "Usage:\n"
+            "/forget 3"
+        )
+        return
+
+    try:
+        memory_id = int(
+            context.args[0]
+        )
+
+    except ValueError:
+        await update.message.reply_text(
+            "Memory ID must be a number."
+        )
+        return
+
+    forgotten = (
+        await forget_long_term_memory(
+            telegram_user_id,
+            memory_id,
+        )
+    )
+
+    if not forgotten:
+        await update.message.reply_text(
+            "I couldn't find that memory."
+        )
+        return
+
+    await update.message.reply_text(
+        "🧹 Forgotten:\n"
+        f"{forgotten}"
     )
