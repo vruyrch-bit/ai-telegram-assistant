@@ -7,7 +7,7 @@ import pytest
 # ==================================================
 # FAKE ENVIRONMENT VARIABLES
 # ==================================================
-# main.py checks these during import.
+# config.py checks these during import.
 # These are test-only fake values.
 
 os.environ.setdefault(
@@ -26,7 +26,32 @@ os.environ.setdefault(
 )
 
 
-import main
+
+from config import (
+    DOCUMENT_CHUNK_SIZE,
+    EMBEDDING_DIMENSIONS,
+    MAX_IMAGE_DIMENSION,
+)
+
+from utils.telegram_text import clean_telegram_text
+
+from rag.retrieval import (
+    chunk_text,
+    question_words,
+    calculate_keyword_score,
+)
+
+from rag.embeddings import cosine_similarity
+
+from services.vision import (
+    should_use_latest_image,
+    normalize_image_for_vision,
+)
+
+from tools.task_tools import (
+    TASK_TOOLS,
+    execute_task_tool,
+)
 from tools import task_tools as task_tools_module
 
 
@@ -44,7 +69,7 @@ def test_clean_telegram_text_removes_markdown():
         "`code`"
     )
 
-    result = main.clean_telegram_text(
+    result = clean_telegram_text(
         text
     )
 
@@ -64,7 +89,7 @@ def test_clean_telegram_text_removes_extra_blank_lines():
         "First\n\n\n\n\nSecond"
     )
 
-    result = main.clean_telegram_text(
+    result = clean_telegram_text(
         text
     )
 
@@ -83,7 +108,7 @@ def test_chunk_text_short_document():
         "This is a short document."
     )
 
-    chunks = main.chunk_text(
+    chunks = chunk_text(
         text
     )
 
@@ -102,7 +127,7 @@ def test_chunk_text_long_document():
         * 100
     )
 
-    chunks = main.chunk_text(
+    chunks = chunk_text(
         text
     )
 
@@ -113,14 +138,14 @@ def test_chunk_text_long_document():
         assert chunk.strip()
 
         assert len(chunk) <= (
-            main.DOCUMENT_CHUNK_SIZE
+            DOCUMENT_CHUNK_SIZE
             + 10
         )
 
 
 def test_chunk_text_empty_string():
 
-    chunks = main.chunk_text("")
+    chunks = chunk_text("")
 
     assert chunks == []
 
@@ -131,7 +156,7 @@ def test_chunk_text_empty_string():
 
 def test_question_words_removes_stop_words():
 
-    result = main.question_words(
+    result = question_words(
         "What are the important Python "
         "and PostgreSQL skills?"
     )
@@ -153,9 +178,9 @@ def test_cosine_similarity_identical_vectors():
 
     vector = [
         1.0
-    ] * main.EMBEDDING_DIMENSIONS
+    ] * EMBEDDING_DIMENSIONS
 
-    result = main.cosine_similarity(
+    result = cosine_similarity(
         vector,
         vector,
     )
@@ -170,13 +195,13 @@ def test_cosine_similarity_opposite_vectors():
 
     vector_a = [
         1.0
-    ] * main.EMBEDDING_DIMENSIONS
+    ] * EMBEDDING_DIMENSIONS
 
     vector_b = [
         -1.0
-    ] * main.EMBEDDING_DIMENSIONS
+    ] * EMBEDDING_DIMENSIONS
 
-    result = main.cosine_similarity(
+    result = cosine_similarity(
         vector_a,
         vector_b,
     )
@@ -189,7 +214,7 @@ def test_cosine_similarity_opposite_vectors():
 
 def test_cosine_similarity_wrong_dimensions():
 
-    result = main.cosine_similarity(
+    result = cosine_similarity(
         [1.0, 2.0],
         [1.0, 2.0],
     )
@@ -209,7 +234,7 @@ def test_keyword_score_matching_content():
     }
 
     result = (
-        main.calculate_keyword_score(
+        calculate_keyword_score(
             (
                 "The backend uses Python "
                 "with PostgreSQL."
@@ -229,7 +254,7 @@ def test_keyword_score_partial_match():
     }
 
     result = (
-        main.calculate_keyword_score(
+        calculate_keyword_score(
             (
                 "The application "
                 "is written in Python."
@@ -249,7 +274,7 @@ def test_keyword_score_no_match():
     }
 
     result = (
-        main.calculate_keyword_score(
+        calculate_keyword_score(
             "The restaurant serves pizza.",
             query_words,
         )
@@ -265,7 +290,7 @@ def test_keyword_score_no_match():
 def test_detect_image_followup():
 
     assert (
-        main.should_use_latest_image(
+        should_use_latest_image(
             "What is happening in this image?"
         )
         is True
@@ -275,7 +300,7 @@ def test_detect_image_followup():
 def test_detect_photo_followup():
 
     assert (
-        main.should_use_latest_image(
+        should_use_latest_image(
             "Can you explain the photo?"
         )
         is True
@@ -285,7 +310,7 @@ def test_detect_photo_followup():
 def test_normal_message_is_not_image_followup():
 
     assert (
-        main.should_use_latest_image(
+        should_use_latest_image(
             "Explain how PostgreSQL works."
         )
         is False
@@ -319,7 +344,7 @@ def test_image_normalization():
     (
         normalized_bytes,
         normalized_image,
-    ) = main.normalize_image_for_vision(
+    ) = normalize_image_for_vision(
         buffer.getvalue()
     )
 
@@ -330,12 +355,12 @@ def test_image_normalization():
 
     assert (
         normalized_image.width
-        <= main.MAX_IMAGE_DIMENSION
+        <= MAX_IMAGE_DIMENSION
     )
 
     assert (
         normalized_image.height
-        <= main.MAX_IMAGE_DIMENSION
+        <= MAX_IMAGE_DIMENSION
     )
 
     assert (
@@ -370,7 +395,7 @@ async def test_create_task_tool(
 
 
     result = (
-        await main.execute_task_tool(
+        await execute_task_tool(
             telegram_user_id=123,
 
             tool_name="create_task",
@@ -428,7 +453,7 @@ async def test_list_tasks_tool(
 
 
     result = (
-        await main.execute_task_tool(
+        await execute_task_tool(
             telegram_user_id=123,
 
             tool_name="list_tasks",
@@ -468,7 +493,7 @@ async def test_complete_task_tool(
 
 
     result = (
-        await main.execute_task_tool(
+        await execute_task_tool(
             telegram_user_id=123,
 
             tool_name="complete_task",
@@ -506,7 +531,7 @@ async def test_delete_task_tool(
 
 
     result = (
-        await main.execute_task_tool(
+        await execute_task_tool(
             telegram_user_id=123,
 
             tool_name="delete_task",
@@ -527,7 +552,7 @@ async def test_delete_task_tool(
 async def test_unknown_tool():
 
     result = (
-        await main.execute_task_tool(
+        await execute_task_tool(
             telegram_user_id=123,
 
             tool_name="not_a_real_tool",
@@ -538,3 +563,35 @@ async def test_unknown_tool():
 
     assert '"success": false' in result
     assert "Unknown tool" in result
+
+
+def test_long_term_memory_hash_normalization():
+    from database.long_term_memory import (
+        memory_content_hash,
+    )
+
+    first = memory_content_hash(
+        "I like mechanical engineering"
+    )
+
+    second = memory_content_hash(
+        "  I LIKE   mechanical engineering  "
+    )
+
+    assert first == second
+
+
+def test_long_term_memory_hash_difference():
+    from database.long_term_memory import (
+        memory_content_hash,
+    )
+
+    first = memory_content_hash(
+        "I like mechanical engineering"
+    )
+
+    second = memory_content_hash(
+        "I like electrical engineering"
+    )
+
+    assert first != second

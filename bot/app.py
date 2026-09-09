@@ -20,6 +20,10 @@ from database.core import (
     initialize_database,
 )
 
+from database.long_term_memory import (
+    initialize_long_term_memory,
+)
+
 from bot.commands import (
     start,
     clear_memory,
@@ -68,6 +72,7 @@ async def post_init(
     application: Application,
 ):
     await initialize_database()
+    await initialize_long_term_memory()
 
     logger.info(
         "Telegram bot initialization complete"
