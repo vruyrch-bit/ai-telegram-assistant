@@ -15,5 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY api.py .
 COPY config.py .
+COPY database ./database
 
 CMD ["python", "main.py"]
