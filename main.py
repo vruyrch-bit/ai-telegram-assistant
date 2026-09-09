@@ -106,6 +106,19 @@ IMAGE_REFERENCE_PHRASES = (
     "in the photo",
     "in the picture",
     "in the screenshot",
+    "read it",
+    "describe it",
+    "explain it",
+    "analyze it",
+    "analyse it",
+    "identify it",
+    "what is this",
+    "what is it",
+    "what do you see",
+    "what does it say",
+    "read the text",
+    "extract the text",
+    "transcribe it",
 )
 
 
@@ -1076,16 +1089,21 @@ async def analyze_image_with_vision(
     ).decode("utf-8")
 
     prompt = (
-        "Analyze the attached image carefully. "
-        "Answer the user's request using what is visibly "
-        "supported by the image. You may describe objects, "
-        "scenes, diagrams, screenshots, documents, products, "
-        "colors, layout, and visible text. "
+        "Analyze the attached image only according to the "
+        "user's specific request. Do not automatically give "
+        "a full description unless the user asks for one. "
+        "Answer using only what is visibly supported by the "
+        "image. You may describe objects, scenes, diagrams, "
+        "screenshots, documents, products, colors, layout, "
+        "and visible text when relevant to the request. "
         "Do not guess the identity of real people or identify "
         "specific TV/movie characters from the image. "
         "If something is uncertain, say that it is uncertain. "
-        "Use plain text suitable for Telegram. Do not use "
-        "Markdown tables or Markdown formatting symbols.\n\n"
+        "Be concise by default. Give a longer answer only if "
+        "the user asks for detail or asks you to read or "
+        "transcribe a large amount of text. Use plain text "
+        "suitable for Telegram. Do not use Markdown tables or "
+        "Markdown formatting symbols.\n\n"
         f"User request:\n{user_prompt}"
     )
 
@@ -1158,10 +1176,6 @@ async def process_image_upload(
         )
         return
 
-    await update.message.reply_text(
-        "🖼️ Analyzing your image..."
-    )
-
     telegram_file = (
         await context.bot.get_file(
             file_id
@@ -1198,6 +1212,9 @@ async def process_image_upload(
         )
         return
 
+    # OCR is prepared silently so a later request such as
+    # "read the text" can be answered more accurately.
+    # We intentionally do NOT run the vision model here.
     try:
         ocr_text = (
             await asyncio.to_thread(
@@ -1214,91 +1231,25 @@ async def process_image_upload(
         )
         ocr_text = ""
 
-    user_prompt = (
-        caption.strip()
-        if caption
-        else (
-            "Describe what is in this image, identify the "
-            "important visible objects or scene, and read "
-            "any meaningful visible text. If it is a "
-            "diagram or screenshot, explain what it shows."
-        )
-    )
-
-    try:
-        vision_answer = (
-            await analyze_image_with_vision(
-                normalized_bytes,
-                user_prompt,
-                ocr_text,
-            )
-        )
-
-    except groq.RateLimitError:
-        await update.message.reply_text(
-            "The vision AI rate limit has been reached. "
-            "Please try again shortly."
-        )
-        return
-
-    except Exception:
-        logger.exception(
-            "Vision analysis failed "
-            "user_id=%s",
-            telegram_user_id,
-        )
-
-        if ocr_text:
-            vision_answer = (
-                "I couldn't run visual analysis, but OCR "
-                "was able to read this text:\n\n"
-                + ocr_text[
-                    :MAX_IMAGE_OCR_CONTEXT
-                ]
-            )
-        else:
-            await update.message.reply_text(
-                "I couldn't analyze that image."
-            )
-            return
-
-    vision_answer = clean_telegram_text(
-        vision_answer
-    )
-
     await save_latest_image(
         telegram_user_id,
         filename,
         "image/jpeg",
         normalized_bytes,
         ocr_text,
-        vision_answer,
+        "",
     )
-
-    memory_user_text = (
-        "[Image uploaded]"
-    )
-
-    if caption:
-        memory_user_text += (
-            f" Caption: {caption}"
-        )
 
     await save_message(
         telegram_user_id,
         "user",
-        memory_user_text,
+        "[Image uploaded]",
     )
 
-    await save_message(
-        telegram_user_id,
-        "assistant",
-        vision_answer,
-    )
-
-    await send_long_message(
-        update,
-        vision_answer,
+    # A photo upload only stores the image. The assistant waits
+    # for a separate instruction instead of describing it.
+    await update.message.reply_text(
+        "🖼️ Image received. Tell me what you'd like me to do with it."
     )
 
 
@@ -2345,8 +2296,7 @@ async def start(
 ):
     await update.message.reply_text(
         "Hello! 👋\n\n"
-        "I am an AI assistant powered by "
-        "OpenAI GPT-OSS 20B through Groq.\n\n"
+        "I am Vruyr's custom AI assistant.\n\n"
         "Features:\n"
         "• AI chat 💬\n"
         "• Conversation memory 🧠\n"
@@ -2357,7 +2307,7 @@ async def start(
         "• Image text reading 👁️\n"
         "• DOCX and TXT files 📝\n"
         "• AI task management ✅\n\n"
-        "Send a photo with an optional caption such as:\n"
+        "Send a photo first, then send a separate instruction such as:\n"
         "• What is in this image?\n"
         "• Read the text in this screenshot\n"
         "• Explain this diagram\n"
@@ -2646,11 +2596,16 @@ async def ask_ai(
         {
             "role": "system",
             "content": (
-                "You are an AI assistant running inside a "
-                "custom Telegram bot. You are powered by "
-                "OpenAI's GPT-OSS 20B model through Groq. "
-                "You are not ChatGPT. Give clear, accurate "
-                "and useful answers. You have tools for "
+                "You are a custom Telegram AI assistant created "
+                "by Vruyr Chakhmakhchyan. If the user asks who "
+                "you are or who made you, say that you are "
+                "Vruyr's custom AI assistant and that Vruyr "
+                "created the bot. Do not introduce yourself as "
+                "OpenAI, Groq, ChatGPT, or a model provider. "
+                "Only mention the underlying model/provider if "
+                "the user explicitly asks what model or service "
+                "powers you. In that case, answer truthfully. "
+                "Give clear, accurate and useful answers. You have tools for "
                 "managing the user's persistent task list. "
                 "When the user clearly asks to create, view, "
                 "complete, or delete a task, use the "
