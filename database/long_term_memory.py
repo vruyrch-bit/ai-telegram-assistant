@@ -566,3 +566,57 @@ async def replace_long_term_memory(
         return None
 
     return row[0]
+
+
+# ==================================================
+# TOUCH ACCESSED MEMORIES
+# ==================================================
+
+async def touch_long_term_memories(
+    telegram_user_id: int,
+    memory_ids,
+):
+    memory_ids = [
+        int(memory_id)
+        for memory_id in memory_ids
+    ]
+
+    if not memory_ids:
+        return 0
+
+    placeholders = ", ".join(
+        ["%s"] * len(memory_ids)
+    )
+
+    query = f"""
+        UPDATE long_term_memories
+
+        SET
+            last_accessed_at = NOW()
+
+        WHERE telegram_user_id = %s
+        AND is_active = TRUE
+        AND id IN ({placeholders})
+    """
+
+    params = [
+        telegram_user_id,
+        *memory_ids,
+    ]
+
+    async with await psycopg.AsyncConnection.connect(
+        DATABASE_URL
+    ) as connection:
+
+        async with connection.cursor() as cursor:
+
+            await cursor.execute(
+                query,
+                params,
+            )
+
+            updated_count = cursor.rowcount
+
+        await connection.commit()
+
+    return updated_count
