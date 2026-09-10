@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - personal-upgrades
 
   pull_request:
     branches:
@@ -15,6 +16,19 @@ permissions:
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: bot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d bot_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
 
     steps:
       - name: Checkout repository
@@ -37,7 +51,16 @@ jobs:
 
       - name: Check Python syntax
         run: |
-          python -m compileall -q main.py api.py
+          python -m compileall -q main.py api.py bot services database rag tools utils
+
+      - name: Run tests
+        env:
+          TELEGRAM_TOKEN: test-token
+          GROQ_API_KEY: test-key
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          ADMIN_API_KEY: test-admin-key
+          BOT_TEST_DATABASE_URL: postgresql://test:test@localhost:5432/bot_test
+        run: pytest -q
 
       - name: Build Docker image
         run: |

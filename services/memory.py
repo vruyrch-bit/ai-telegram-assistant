@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 
 from database.long_term_memory import (
     list_long_term_memories,
@@ -8,6 +9,7 @@ from database.long_term_memory import (
     get_long_term_memory,
     save_long_term_memory,
     replace_long_term_memory,
+    touch_long_term_memories,
 )
 
 from rag.embeddings import (
@@ -24,6 +26,23 @@ MEMORY_RETRIEVAL_LIMIT = 5
 MEMORY_CANDIDATE_LIMIT = 100
 MIN_MEMORY_SIMILARITY = 0.35
 MEMORY_DUPLICATE_THRESHOLD = 0.93
+
+# Relevance remains dominant; metadata only adds bounded bonuses.
+MEMORY_RECENCY_BONUS = 0.05
+MEMORY_ACCESS_BONUS = 0.03
+MEMORY_RECENCY_HALF_LIFE_DAYS = 30.0
+MEMORY_ACCESS_HALF_LIFE_DAYS = 7.0
+
+
+def memory_time_decay(timestamp, now, half_life_days):
+    """Missing timestamps add no bonus; treat legacy naive values as UTC."""
+    if timestamp is None:
+        return 0.0
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    age_days = max(0.0, (now - timestamp).total_seconds() / 86400.0)
+    return 2.0 ** (-age_days / half_life_days)
+
 
 
 async def remember_user_memory(
@@ -328,6 +347,7 @@ async def retrieve_relevant_memories(
         return []
 
     scored = []
+    now = datetime.now(timezone.utc)
 
     for (
         memory_id,
@@ -410,9 +430,21 @@ async def retrieve_relevant_memories(
             / 5.0
         ) * 0.05
 
+        recency_bonus = MEMORY_RECENCY_BONUS * memory_time_decay(
+            full_memory[8] or full_memory[7],
+            now,
+            MEMORY_RECENCY_HALF_LIFE_DAYS,
+        )
+        access_bonus = MEMORY_ACCESS_BONUS * memory_time_decay(
+            full_memory[9],
+            now,
+            MEMORY_ACCESS_HALF_LIFE_DAYS,
+        )
         final_score = (
             similarity
             + importance_bonus
+            + recency_bonus
+            + access_bonus
         )
 
         if (
@@ -438,9 +470,26 @@ async def retrieve_relevant_memories(
         reverse=True,
     )
 
-    return scored[
-        :limit
-    ]
+    selected_memories = scored[:limit]
+
+    if selected_memories:
+        try:
+            await touch_long_term_memories(
+                telegram_user_id,
+                [
+                    memory["id"]
+                    for memory in selected_memories
+                ],
+            )
+
+        except Exception:
+            logger.exception(
+                "Failed to update memory access timestamps "
+                "user_id=%s",
+                telegram_user_id,
+            )
+
+    return selected_memories
 
 
 async def build_memory_context(

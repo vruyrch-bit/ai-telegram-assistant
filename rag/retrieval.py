@@ -198,7 +198,7 @@ def question_words(
     question: str,
 ):
     words = re.findall(
-        r"[A-Za-z0-9]+",
+        r"[^\W_]+",
         question.lower(),
     )
 
@@ -496,7 +496,7 @@ def build_document_context(
         ) = row
 
         section = (
-            f"[Source: {filename}, "
+            f"[Source: {filename}, document {document_id}, "
             f"chunk {chunk_index + 1}]\n"
             f"{content}"
         )
@@ -532,6 +532,8 @@ def build_document_context(
 async def get_document_context(
     telegram_user_id: int,
     question: str,
+    document_id: int | None = None,
+    collection: str | None = None,
 ):
     async with await psycopg.AsyncConnection.connect(
         DATABASE_URL
@@ -555,6 +557,8 @@ async def get_document_context(
 
             WHERE
                 d.telegram_user_id = %s
+                AND (%s::bigint IS NULL OR d.id = %s)
+                AND (%s::text IS NULL OR d.collection = %s)
 
             ORDER BY
                 d.id DESC,
@@ -563,7 +567,7 @@ async def get_document_context(
             LIMIT 500
             """,
             (
-                telegram_user_id,
+                telegram_user_id, document_id, document_id, collection, collection,
             ),
         )
 
@@ -741,13 +745,9 @@ async def get_document_context(
 
         return None
 
-    selected_rows = [
-        item[3]
-
-        for item in scored[
-            :DOCUMENT_RETRIEVAL_LIMIT
-        ]
-    ]
+    relevant = [item for item in scored
+                if item[1] >= MIN_SEMANTIC_SCORE or item[2] > 0]
+    selected_rows = [item[3] for item in relevant[:DOCUMENT_RETRIEVAL_LIMIT]]
 
     logger.info(
         "Hybrid RAG retrieval "

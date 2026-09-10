@@ -80,8 +80,32 @@ FASTEMBED_CACHE_DIR = os.getenv("FASTEMBED_CACHE_DIR")
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN was not found")
 
-if not GROQ_API_KEY:
+AI_PROVIDER = os.getenv("AI_PROVIDER", "groq")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+if AI_PROVIDER not in {"groq", "local"}:
+    raise ValueError("AI_PROVIDER must be groq or local")
+
+if AI_PROVIDER == "groq" and not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY was not found")
 
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL was not found")
+
+
+# Optional upgrades; existing model defaults remain usable.
+AI_MODEL = os.getenv("AI_MODEL", AI_MODEL)
+VOICE_MODEL = os.getenv("VOICE_MODEL", VOICE_MODEL)
+VISION_MODEL = os.getenv("VISION_MODEL", VISION_MODEL)
+CODING_MODEL = os.getenv("CODING_MODEL") or AI_MODEL
+REASONING_MODEL = os.getenv("REASONING_MODEL") or AI_MODEL
+ALLOWED_USER_IDS = {int(value.strip()) for value in os.getenv("ALLOWED_USER_IDS", "").split(",") if value.strip()}
+
+VOICE_LANGUAGE = os.getenv("VOICE_LANGUAGE", "")
+
+if AI_PROVIDER == "local":
+    # Local model names never fall through to paid cloud providers.
+    AI_MODEL = os.getenv("LOCAL_AI_MODEL", "qwen3:4b")
+    CODING_MODEL = AI_MODEL
+    REASONING_MODEL = AI_MODEL
+    VISION_MODEL = os.getenv("LOCAL_VISION_MODEL", "qwen3-vl:2b")
+    VOICE_MODEL = os.getenv("LOCAL_WHISPER_MODEL", "base")

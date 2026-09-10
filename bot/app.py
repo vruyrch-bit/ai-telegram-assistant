@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 import sys
 
@@ -76,10 +78,24 @@ async def post_init(
 ):
     await initialize_database()
     await initialize_long_term_memory()
+    from database.upgrades import initialize_upgrades
+    from bot.personal_commands import setup_personal
+    from services.jobs import run_jobs
+    await initialize_upgrades()
+    await setup_personal(application)
+    application.bot_data["reminder_worker"] = asyncio.create_task(run_jobs(application.bot))
 
     logger.info(
         "Telegram bot initialization complete"
     )
+
+
+async def post_shutdown(application):
+    worker = application.bot_data.pop("reminder_worker", None)
+    if worker:
+        worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker
 
 
 def build_application():
@@ -91,6 +107,8 @@ def build_application():
         .post_init(
             post_init
         )
+        .post_stop(post_shutdown)
+        .post_shutdown(post_shutdown)
         .build()
     )
 

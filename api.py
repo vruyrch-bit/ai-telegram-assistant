@@ -1,4 +1,5 @@
 import os
+import secrets
 
 import psycopg
 
@@ -63,7 +64,7 @@ async def verify_api_key(
     api_key: str = Depends(api_key_header),
 ):
 
-    if api_key != ADMIN_API_KEY:
+    if not api_key or not secrets.compare_digest(api_key, ADMIN_API_KEY):
 
         raise HTTPException(
             status_code=401,
@@ -392,3 +393,24 @@ async def delete_user_messages(
             status_code=500,
             detail="Could not delete messages",
         )
+
+
+@app.get("/activity")
+async def activity(api_key: str = Depends(verify_api_key)):
+    """Aggregate operational metrics without message bodies or tool arguments."""
+    from psycopg.rows import dict_row
+    try:
+        async with await psycopg.AsyncConnection.connect(DATABASE_URL, row_factory=dict_row) as conn:
+            cursor = await conn.execute("""SELECT tool, COUNT(*) AS calls,
+                COUNT(*) FILTER (WHERE NOT success) AS failures,
+                ROUND(AVG(duration_ms)) AS average_duration_ms
+                FROM tool_events WHERE created_at > NOW() - INTERVAL '24 hours'
+                GROUP BY tool ORDER BY calls DESC""")
+            tools = await cursor.fetchall()
+            cursor = await conn.execute('SELECT status, COUNT(*) AS count FROM reminders GROUP BY status')
+            reminders = await cursor.fetchall()
+            cursor = await conn.execute('SELECT COUNT(*) AS active FROM long_term_memories WHERE is_active = TRUE')
+            memories = await cursor.fetchone()
+        return {'tools_last_24_hours': tools, 'reminders': reminders, 'memories': memories}
+    except Exception:
+        raise HTTPException(status_code=503, detail='Activity metrics unavailable')

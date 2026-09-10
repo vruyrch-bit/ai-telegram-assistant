@@ -89,3 +89,6 @@ uvicorn==0.52.4
 uvloop==0.22.1
 watchfiles==1.2.0
 websockets==16.1.1
+
+ddgs==9.16.0
+primp==2.0.0

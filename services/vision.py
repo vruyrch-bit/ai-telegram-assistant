@@ -48,10 +48,11 @@ IMAGE_REFERENCE_PHRASES = (
 )
 
 
-vision_client = AsyncGroq(
-    api_key=GROQ_API_KEY,
-    timeout=30.0,
-    max_retries=1,
+from config import AI_PROVIDER
+from services.local_ai import LocalClient
+
+vision_client = LocalClient() if AI_PROVIDER == "local" else AsyncGroq(
+    api_key=GROQ_API_KEY, timeout=30.0, max_retries=1,
 )
 
 
@@ -237,6 +238,10 @@ async def process_image_upload(
         await telegram_file
         .download_as_bytearray()
     )
+
+    if len(image_data) > MAX_IMAGE_SIZE:
+        await update.message.reply_text("That image is too large.")
+        return
 
     original_bytes = bytes(
         image_data

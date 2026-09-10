@@ -33,6 +33,11 @@ services:
     environment:
       TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
       GROQ_API_KEY: ${GROQ_API_KEY}
+      ALLOWED_USER_IDS: ${ALLOWED_USER_IDS:-}
+      AI_MODEL: ${AI_MODEL:-openai/gpt-oss-20b}
+      CODING_MODEL: ${CODING_MODEL:-}
+      REASONING_MODEL: ${REASONING_MODEL:-}
+      VOICE_LANGUAGE: ${VOICE_LANGUAGE:-}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
 
     depends_on:

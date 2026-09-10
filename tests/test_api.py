@@ -87,3 +87,7 @@ def test_wrong_api_key():
     )
 
     assert response.status_code == 401
+
+
+def test_activity_requires_api_key():
+    assert client.get('/activity').status_code == 401

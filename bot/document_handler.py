@@ -115,6 +115,10 @@ async def handle_document(
             .download_as_bytearray()
         )
 
+        if len(file_data) > MAX_DOCUMENT_SIZE:
+            await update.message.reply_text("That file is too large.")
+            return
+
         file_bytes = bytes(
             file_data
         )
@@ -139,11 +143,7 @@ async def handle_document(
             file_type = "pdf"
 
         elif extension == ".docx":
-            extracted_text = (
-                extract_docx_text(
-                    file_bytes
-                )
-            )
+            extracted_text = await asyncio.to_thread(extract_docx_text, file_bytes)
 
             file_type = "docx"
 
@@ -165,6 +165,10 @@ async def handle_document(
                 "I couldn't find readable text "
                 "in this file."
             )
+            return
+
+        if len(extracted_text) > 1_000_000:
+            await update.message.reply_text("This document has too much text to index at once. Please split it into smaller files.")
             return
 
         chunks = chunk_text(

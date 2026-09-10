@@ -81,7 +81,7 @@ async def complete_task(
                 id = %s
                 AND telegram_user_id = %s
                 AND status = 'open'
-            RETURNING title
+            RETURNING title, due_date, priority, project, notes, recurrence
             """,
             (
                 task_id,
@@ -90,6 +90,17 @@ async def complete_task(
         )
 
         row = await cursor.fetchone()
+        if row and row[5] != 'none':
+            from datetime import date, timedelta
+            previous = date.fromisoformat(row[1])
+            step = 1 if row[5] == 'daily' else 7
+            today = date.today()
+            days = max(step, ((today - previous).days // step + 1) * step)
+            next_due = previous + timedelta(days=days)
+            await connection.execute("""INSERT INTO tasks
+                (telegram_user_id, title, due_date, priority, project, notes, recurrence)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (telegram_user_id, row[0], next_due.isoformat(), *row[2:]))
 
     if not row:
         return None

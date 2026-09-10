@@ -1,5 +1,7 @@
 # AI Telegram Assistant
 
+Personal assistant upgrades are implemented locally. See [UPGRADE_NOTES.md](UPGRADE_NOTES.md) for features, configuration, validation and deployment steps.
+
 A production-style multimodal AI assistant built with Python and deployed on Railway.
 
 It combines conversational AI, PostgreSQL memory, natural-language task tools, voice transcription, document RAG, OCR, image understanding, a FastAPI admin API, Docker, automated tests, and GitHub Actions CI/CD.
@@ -444,7 +446,7 @@ It involved:
 
 ## Status
 
-Feature-complete as an internship portfolio project.
+The original portfolio baseline is complete. See UPGRADE_NOTES.md for the current personal-upgrade status and remaining work.
 
 ```text
 [✓] AI chat

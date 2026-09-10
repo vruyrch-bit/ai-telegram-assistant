@@ -162,55 +162,19 @@ async def tasks_command(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    telegram_user_id = (
-        update.effective_user.id
-    )
-
-    tasks = await get_tasks(
-        telegram_user_id
-    )
-
-    if not tasks:
-        await update.message.reply_text(
-            "You don't have any tasks yet."
-        )
-        return
-
-    lines = [
-        "✅ Your Tasks",
-        "",
-    ]
-
-    for (
-        task_id,
-        title,
-        status,
-        due_date,
-    ) in tasks:
-        icon = (
-            "✅"
-            if status == "done"
-            else "⬜"
-        )
-
-        line = (
-            f"{icon} "
-            f"{task_id}. "
-            f"{title}"
-        )
-
-        if due_date:
-            line += (
-                f" — due {due_date}"
-            )
-
-        lines.append(
-            line
-        )
-
-    await update.message.reply_text(
-        "\n".join(lines)
-    )
+    from database.personal import fetch
+    from utils.telegram_text import send_long_message
+    rows = await fetch("""SELECT id, title, status, due_date, priority, project, recurrence
+        FROM tasks WHERE telegram_user_id = %s
+        ORDER BY (status = 'open') DESC, priority DESC, id DESC LIMIT 100""",
+        (update.effective_user.id,))
+    lines = []
+    for task in rows:
+        icon = "✅" if task['status'] == 'done' else "⬜"
+        lines.append(f"{icon} {task['id']}. {task['title']}\n"
+                     f"Priority {task['priority']}/5 · {task['project'] or 'No project'} · "
+                     f"Due: {task['due_date'] or 'Not set'} · {task['recurrence']}")
+    await send_long_message(update, "\n\n".join(lines) or "You don't have any tasks yet.")
 
 
 async def add_task_command(

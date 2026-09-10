@@ -257,6 +257,10 @@ async def handle_voice(
             .download_as_bytearray()
         )
 
+        if len(audio_data) > MAX_VOICE_SIZE:
+            await update.message.reply_text("That voice message is too large.")
+            return
+
         transcription = (
             await transcribe_voice(
                 bytes(audio_data)
@@ -270,9 +274,7 @@ async def handle_voice(
             )
             return
 
-        await update.message.reply_text(
-            f"📝 I heard:\n{transcription}"
-        )
+        await send_long_message(update, f"📝 I heard:\n{transcription}")
 
         await process_user_message(
             update,

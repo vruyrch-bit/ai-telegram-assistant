@@ -45,6 +45,16 @@ async def save_latest_image(
             ),
         )
 
+        # Serialize per-user inserts and retention, even with concurrent uploads.
+        await connection.execute("SELECT pg_advisory_xact_lock(%s)", (telegram_user_id,))
+        await connection.execute("""INSERT INTO image_history
+            (telegram_user_id, filename, mime_type, image_data, ocr_text, vision_summary)
+            VALUES (%s, %s, %s, %s, %s, %s)""",
+            (telegram_user_id, filename, mime_type, image_data, ocr_text, vision_summary))
+        await connection.execute("""DELETE FROM image_history WHERE telegram_user_id = %s
+            AND id NOT IN (SELECT id FROM image_history WHERE telegram_user_id = %s
+                           ORDER BY id DESC LIMIT 10)""", (telegram_user_id, telegram_user_id))
+
 
 async def load_latest_image(
     telegram_user_id: int,

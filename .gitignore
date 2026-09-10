@@ -49,3 +49,10 @@ dist/
 .cache/
 fastembed_cache/
 models/
+
+# Personal database backups
+*.dump
+backups/
+
+# Local AI runtime and downloaded models
+.runtime/
