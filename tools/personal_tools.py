@@ -41,7 +41,10 @@ class ListReminders(Arguments):
 class EditTask(Arguments):
     task_id: int = Field(gt=0)
     title: str | None = Field(default=None, min_length=1, max_length=500)
-    due_date: str | None = Field(default=None, max_length=100, description='Set empty string to clear deadline.')
+    due_date: str | None = Field(default=None, max_length=100, description=(
+        'Resolve relative dates using current time and saved timezone. '
+        'Use ISO 8601 with UTC offset for a time, YYYY-MM-DD for date-only. '
+        'Set empty string to clear deadline. Recurring tasks require date-only.'))
     priority: int | None = Field(default=None, ge=1, le=5)
     project: str | None = Field(default=None, max_length=100)
     recurrence: Literal['none', 'daily', 'weekly'] | None = None
@@ -99,7 +102,7 @@ MODELS = {
     'cancel_reminder': (ReminderID, 'Cancel a reminder explicitly requested by the user.'),
     'edit_reminder': (EditReminder, 'Edit or reschedule an existing pending or failed reminder; use due_at to snooze.'),
     'edit_task': (EditTask, 'Edit title, deadline, priority (1 low to 5 high), project or notes of an existing task. Use search_tasks to find its ID.'),
-    'search_tasks': (SearchTasks, 'Search tasks by title or notes, filter status/project, and show deadline, priority, project and notes.'),
+    'search_tasks': (SearchTasks, 'Search tasks by title, notes or project, filter status/project, and show deadline, priority, project and notes.'),
     'save_note': (SaveNote, 'Save or update a personal knowledge-base note when asked, including project notes and goals. Do not store secrets.'),
     'search_notes': (SearchNotes, 'Search saved notes, goals and project knowledge by literal substring.'),
     'delete_note': (DeleteNote, 'Delete a saved note only when the user explicitly asks.'),
@@ -196,15 +199,15 @@ async def execute_personal_tool(user_id, name, arguments):
         elif name == 'search_tasks':
             rows = await fetch('''SELECT id, title, status, due_date, priority, project, notes, recurrence FROM tasks
                 WHERE telegram_user_id = %s AND (%s = 'all' OR status = %s)
-                AND (%s = '' OR project = %s)
-                AND strpos(lower(title || ' ' || notes), lower(%s)) > 0
+                AND (%s = '' OR lower(project) = lower(%s))
+                AND strpos(lower(title || ' ' || notes || ' ' || project), lower(%s)) > 0
                 ORDER BY priority DESC, id DESC LIMIT 50''',
                 (user_id, args.status, args.status, args.project, args.project, args.query))
         elif name == 'save_note':
             if not args.title.strip() or not args.content.strip():
                 raise ValueError('Note title and content cannot be blank.')
             if args.note_id:
-                fields = args.model_dump(exclude={'note_id'})
+                fields = args.model_dump(exclude={'note_id'}, exclude_unset=True)
                 from datetime import datetime, timezone
                 fields['updated_at'] = datetime.now(timezone.utc)
                 rows = await update_owned('knowledge_notes', args.note_id, user_id, fields)
@@ -213,8 +216,8 @@ async def execute_personal_tool(user_id, name, arguments):
                     VALUES (%s, %s, %s, %s) RETURNING id''', (user_id, args.title, args.content, args.project))
         elif name == 'search_notes':
             rows = await fetch('''SELECT id, title, content, project FROM knowledge_notes
-                WHERE telegram_user_id = %s AND (%s = '' OR project = %s)
-                AND strpos(lower(title || ' ' || content), lower(%s)) > 0
+                WHERE telegram_user_id = %s AND (%s = '' OR lower(project) = lower(%s))
+                AND strpos(lower(title || ' ' || content || ' ' || project), lower(%s)) > 0
                 ORDER BY updated_at DESC LIMIT 10''', (user_id, args.project, args.project, args.query))
             # Keep tool context bounded even with long notes.
             for row in rows:

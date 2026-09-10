@@ -7,6 +7,11 @@ async def create_task(
     telegram_user_id: int,
     title: str,
     due_date=None,
+    *,
+    priority: int = 3,
+    project: str = '',
+    notes: str = '',
+    recurrence: str = 'none',
 ):
     async with await psycopg.AsyncConnection.connect(
         DATABASE_URL
@@ -16,15 +21,23 @@ async def create_task(
             INSERT INTO tasks (
                 telegram_user_id,
                 title,
-                due_date
+                due_date,
+                priority,
+                project,
+                notes,
+                recurrence
             )
-            VALUES (%s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
                 telegram_user_id,
                 title,
                 due_date,
+                priority,
+                project,
+                notes,
+                recurrence,
             ),
         )
 

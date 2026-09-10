@@ -51,5 +51,5 @@ def local_whisper():
 
 def transcribe_local(audio_bytes):
     segments, _ = local_whisper().transcribe(io.BytesIO(audio_bytes),
-        language=VOICE_LANGUAGE or None, beam_size=3)
+        language=VOICE_LANGUAGE or None, beam_size=3, vad_filter=True)
     return " ".join(segment.text.strip() for segment in segments)

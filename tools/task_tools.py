@@ -1,5 +1,9 @@
 import json
 import logging
+from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from database.tasks import (
     create_task,
@@ -10,6 +14,28 @@ from database.tasks import (
 
 
 logger = logging.getLogger(__name__)
+
+
+class CreateTaskArguments(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True, str_strip_whitespace=True)
+    title: str = Field(min_length=1, max_length=500)
+    due_date: str | None = Field(default=None, max_length=100, description=(
+        'Resolve relative deadlines from the current date and saved user timezone. '
+        'Use ISO 8601 with UTC offset when a time is given, YYYY-MM-DD for date-only. '
+        'Recurring tasks currently require date-only deadlines. Do not invent a deadline.'))
+    priority: int = Field(default=3, ge=1, le=5, description='1 low, 3 medium, 5 high.')
+    project: str = Field(default='', max_length=100)
+    notes: str = Field(default='', max_length=5000)
+    recurrence: Literal['none', 'daily', 'weekly'] = 'none'
+
+    @model_validator(mode='after')
+    def validate_recurrence(self):
+        if self.recurrence != 'none':
+            try:
+                date.fromisoformat(self.due_date or '')
+            except ValueError:
+                raise ValueError('Recurring tasks require a YYYY-MM-DD deadline.')
+        return self
 
 
 # ==================================================
@@ -111,6 +137,9 @@ TASK_TOOLS = [
     },
 ]
 
+# Keep the advertised create schema and runtime validation in sync.
+TASK_TOOLS[0]['function']['parameters'] = CreateTaskArguments.model_json_schema()
+
 
 # ==================================================
 # TASK TOOL EXECUTION
@@ -128,39 +157,21 @@ async def execute_task_tool(
     )
 
     if tool_name == "create_task":
-        title = str(
-            arguments.get(
-                "title",
-                "",
-            )
-        ).strip()
-
-        due_date = arguments.get(
-            "due_date"
-        )
-
-        if not title:
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": (
-                        "Task title cannot be empty."
-                    ),
-                }
-            )
-
-        if due_date is not None:
-            due_date = str(
-                due_date
-            ).strip()
-
-            if not due_date:
-                due_date = None
+        try:
+            parsed = CreateTaskArguments.model_validate(arguments)
+        except ValidationError:
+            return json.dumps({'success': False, 'error': (
+                'Invalid task fields. Use a nonblank title, priority 1–5, and '
+                'a YYYY-MM-DD deadline for recurring tasks.')})
+        title = parsed.title
+        due_date = parsed.due_date or None
+        extra = parsed.model_dump(exclude={'title', 'due_date'}, exclude_unset=True)
 
         task_id = await create_task(
             telegram_user_id,
             title,
             due_date,
+            **extra,
         )
 
         return json.dumps(
@@ -169,6 +180,10 @@ async def execute_task_tool(
                 "task_id": task_id,
                 "title": title,
                 "due_date": due_date,
+                "priority": parsed.priority,
+                "project": parsed.project,
+                "notes": parsed.notes,
+                "recurrence": parsed.recurrence,
             },
             ensure_ascii=False,
         )

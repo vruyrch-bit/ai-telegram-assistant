@@ -12,11 +12,6 @@ def clean_telegram_text(
     )
 
     text = text.replace(
-        "__",
-        ""
-    )
-
-    text = text.replace(
         "```",
         ""
     )
@@ -68,16 +63,15 @@ async def send_long_message(
 
     max_length = 4000
 
-    for i in range(
-        0,
-        len(text),
-        max_length,
-    ):
-        part = text[
-            i:
-            i + max_length
-        ]
-
-        await update.message.reply_text(
-            part
-        )
+    # Count UTF-16 units so astral characters (including emoji) fit too.
+    start = 0
+    units = 0
+    for index, character in enumerate(text):
+        width = 2 if ord(character) > 0xFFFF else 1
+        if units + width > max_length:
+            await update.message.reply_text(text[start:index])
+            start = index
+            units = 0
+        units += width
+    if start < len(text):
+        await update.message.reply_text(text[start:])

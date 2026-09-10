@@ -17,22 +17,8 @@ pytestmark = pytest.mark.skipif(not URL, reason='Requires isolated BOT_TEST_DATA
 
 
 @pytest_asyncio.fixture
-async def database(monkeypatch):
-    from database import core, upgrades, personal, tasks, images, long_term_memory
-    from services import jobs
-    import config
-    for module in [core, upgrades, personal, tasks, images, long_term_memory, jobs, config]:
-        monkeypatch.setattr(module, 'DATABASE_URL', URL)
-    await core.initialize_database()
-    await long_term_memory.initialize_long_term_memory()
-    await upgrades.initialize_upgrades()
-    await upgrades.initialize_upgrades()
-    # Only test fixture records, on the explicitly supplied disposable database.
-    import psycopg
-    async with await psycopg.AsyncConnection.connect(URL) as conn:
-        for table in ['tasks', 'reminders', 'knowledge_notes', 'user_preferences', 'image_history', 'latest_images', 'tool_events']:
-            from psycopg import sql
-            await conn.execute(sql.SQL('DELETE FROM {} WHERE telegram_user_id IN (101, 202)').format(sql.Identifier(table)))
+async def database(isolated_db):
+    from database import personal
     return personal
 
 

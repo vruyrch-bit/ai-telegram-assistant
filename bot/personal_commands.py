@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from collections import OrderedDict, deque
+from datetime import timezone
 from time import monotonic
 
 from telegram import BotCommand, Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -81,7 +82,7 @@ async def notes_command(update, context):
 
 async def images_command(update, context):
     rows = await fetch('SELECT id, filename, created_at FROM image_history WHERE telegram_user_id = %s ORDER BY id DESC LIMIT 10', (update.effective_user.id,))
-    await send_long_message(update, '\n'.join(f"{r['id']}. {r['filename']} ({r['created_at']:%Y-%m-%d %H:%M UTC})" for r in rows) or 'No image history yet. Upload a photo to begin.')
+    await send_long_message(update, '\n'.join(f"{r['id']}. {r['filename']} ({r['created_at'].astimezone(timezone.utc):%Y-%m-%d %H:%M UTC})" for r in rows) or 'No image history yet. Upload a photo to begin.')
 
 
 async def image_command(update, context):

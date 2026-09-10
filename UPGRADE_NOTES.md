@@ -6,11 +6,11 @@
 - Durable reminders: create/list/edit/cancel, explicit saved IANA timezone, one-time/daily/weekly schedules, five-second polling, retry backoff, terminal failures after five attempts. `/timezone`, `/reminders` and normal-language tools are connected.
 - Tasks: search/edit priority, project, notes and deadlines; daily/weekly recurring tasks create their next occurrence on completion. Recurring tasks require YYYY-MM-DD deadlines; deadlines alone do not send notifications.
 - Personal knowledge: create/edit/search/delete notes and goals grouped by project. `/notes` searches this store.
-- Web search: Brave-backed search tool returns sources and snippets. Requires `BRAVE_SEARCH_API_KEY`. Provider credentials and real searches were not exercised during local tests.
+- Web search: DDGS provides free public search without an API key. Live testing returned five sources for a Python release query, but some attempts were temporarily unavailable. Malformed result links are discarded safely; there is no paid fallback.
 - Documents: collection assignment, explicit document/collection search tools, source labels with document IDs and chunk numbers, Unicode keyword extraction, rejection of irrelevant tail chunks.
 - Images: last ten uploads retained per user; `/images`, `/image ID question`, `/clearimages confirm`. Existing `/clearimage` still clears only the latest-image slot.
 - Model routing: configurable coding and reasoning models selected by simple request keywords; default to the existing chat model. This is basic rule-based routing, not a quality-trained classifier.
-- Voice: downloaded-size checks, long transcript handling, optional transcription language hint. Voice replies are not implemented.
+- Voice: downloaded-size checks, long transcript handling, optional transcription language hint. Local faster-whisper uses its bundled speech detector to avoid transcribing silence. Groq transcription remains available. Voice replies are not implemented.
 - Telegram: `/help` command menu and buttons, global error handler, private-chat enforcement, optional user allowlist, 20 updates/minute per-user limit. Excess requests are silently ignored. The in-memory limiter resets on restart.
 - Observability: tool name/success/duration events without arguments or message bodies; authenticated `/activity` aggregates recent tools, reminder status and memory counts.
 - Reliability: repeatable additive schema migrations, bounded new database connections/statements, stronger API-key comparison, backup utility, and CI now runs both unit and disposable PostgreSQL integration tests on main and personal-upgrades pushes.
@@ -19,7 +19,8 @@
 
 Existing secrets are unchanged. Add optional settings in your deployment environment:
 
-- `BRAVE_SEARCH_API_KEY`: enables public web search.
+- Web search needs no additional key.
+- `AI_PROVIDER=local`, `OLLAMA_URL=http://127.0.0.1:11434`, `LOCAL_AI_MODEL=qwen3:4b`, `LOCAL_VISION_MODEL=qwen3-vl:2b`: optional PC-only setup requiring a running Ollama server, downloaded models, and `requirements-local.txt` for voice. The local Ollama installation is not yet complete. The standard Docker image installs only `requirements.txt`, so local Whisper is not included there.
 - `AI_MODEL`, `CODING_MODEL`, `REASONING_MODEL`, `VISION_MODEL`, `VOICE_MODEL`: model identifiers supported by your existing Groq account. Chat/coding/reasoning choices must support tool calls. Alternate models were not live-tested.
 - `VOICE_LANGUAGE`: optional transcription language code; omit for automatic detection.
 - `ALLOWED_USER_IDS`: comma-separated Telegram numeric user IDs. Empty allows any private-chat user, preserving existing access availability. Group chats are now ignored to avoid sharing personal context.
@@ -58,18 +59,20 @@ Test restores into a separate empty database using `pg_restore --exit-on-error`;
 
 ## Tests
 
-Final local result: 59 tests passed, including 7 PostgreSQL integration tests. Compilation and dependency checks passed. Backup creation and restoration into a separate database passed. One existing Starlette dependency deprecation warning remains. Docker image build and live provider/Telegram checks were not run.
+Latest local validation: 100 tests passed with disposable PostgreSQL and cached local Whisper enabled. The ordinary suite passes 71 tests and skips 29 opt-in tests. Compilation, dependency checks, Docker build/import checks, Compose validation, workflow YAML/shell syntax, and backup/restore passed. Four dependency deprecation warnings remain in the full run. Real Telegram polling and live Groq/Ollama inference were not exercised; AI responses, vision, OCR and embeddings use deterministic fixtures in integration tests.
 
 ```bash
 python -m compileall -q main.py api.py config.py bot database services rag tools utils scripts tests
 python -m pytest -q
 python -m pip check
+python scripts/test_disposable_postgres.py -q
+# Only when faster-whisper and its base model are already installed/cached:
+BOT_TEST_LOCAL_WHISPER=1 HF_HUB_OFFLINE=1 python scripts/test_disposable_postgres.py -q
 ```
 
-Integration tests are opt-in locally: set `BOT_TEST_DATABASE_URL` to a disposable UTF-8 PostgreSQL database. The integration suite creates tables and removes its fixture data for user IDs 101 and 202; never use a production database for this setting. CI provisions its own PostgreSQL service.
+The disposable runner creates a fresh UTF-8 PostgreSQL cluster with a private Unix socket and removes it after testing. It requires local PostgreSQL server/client tools. Alternatively, set `BOT_TEST_DATABASE_URL` to an explicitly disposable local database whose name starts with `bot_test`. The integration fixture truncates application tables between tests; never use any database containing real data. CI provisions its own PostgreSQL service. Tests disable dotenv loading and use dummy application credentials.
 
 ## Technical references
 
 - [PostgreSQL queue locking](https://www.postgresql.org/docs/18/sql-select.html)
 - [Telegram application lifecycle](https://docs.python-telegram-bot.org/en/v22.6/telegram.ext.applicationbuilder.html)
-- [Brave web search](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started)

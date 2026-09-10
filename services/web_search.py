@@ -27,13 +27,22 @@ async def search_web(query):
     results = []
     seen = set()
     for item in raw:
+        if not isinstance(item, dict):
+            continue
         url = item.get('href', '')
-        parsed = urlsplit(url)
+        if not isinstance(url, str):
+            continue
+        try:
+            parsed = urlsplit(url)
+        except ValueError:
+            continue
         if parsed.scheme not in {'http', 'https'} or not parsed.hostname or url in seen:
             continue
         seen.add(url)
-        results.append({'title': item.get('title', '')[:300], 'url': url,
-                        'snippet': item.get('body', '')[:1500]})
+        title = item.get('title')
+        body = item.get('body')
+        results.append({'title': title[:300] if isinstance(title, str) else '', 'url': url,
+                        'snippet': body[:1500] if isinstance(body, str) else ''})
         if len(results) == 5:
             break
     _cache[query] = (monotonic(), results)
