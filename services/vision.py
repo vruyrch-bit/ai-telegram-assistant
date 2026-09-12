@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import logging
+import re
 
 from groq import AsyncGroq
 from PIL import Image, ImageOps
@@ -64,7 +65,11 @@ def should_use_latest_image(
     return any(
         phrase in lower_message
         for phrase in IMAGE_REFERENCE_PHRASES
-    )
+    ) or bool(re.search(
+        r"\b(?:latest|last|most recent)(?:\s+uploaded)?\s+"
+        r"(?:image|photo|picture|screenshot)\b",
+        lower_message,
+    ))
 
 
 def normalize_image_for_vision(
