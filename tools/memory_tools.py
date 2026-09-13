@@ -45,6 +45,7 @@ MEMORY_TOOLS = [
                             "project",
                             "workflow",
                             "stable_fact",
+                            "fact",
                         ],
                     },
                     "importance": {
@@ -96,6 +97,7 @@ MEMORY_TOOLS = [
                             "project",
                             "workflow",
                             "stable_fact",
+                            "fact",
                         ],
                     },
                     "importance": {
@@ -230,6 +232,10 @@ async def execute_memory_tool(
             "stable_fact",
         )
     ).strip()
+
+    # /remember and older records use "fact"; accept that tool input alias.
+    if memory_type == "fact":
+        memory_type = "stable_fact"
 
     try:
         importance = int(
