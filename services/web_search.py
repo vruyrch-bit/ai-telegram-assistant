@@ -10,7 +10,7 @@ _cache = OrderedDict()
 
 def _search(query):
     with DDGS(timeout=8) as search:
-        return search.text(query, max_results=5, backend='duckduckgo,bing', safesearch='moderate')
+        return search.text(query, max_results=5, backend='auto', safesearch='moderate')
 
 
 async def search_web(query):

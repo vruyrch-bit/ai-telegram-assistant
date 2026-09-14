@@ -120,6 +120,14 @@ async def initialize_long_term_memory():
 # SAVE MEMORY
 # ==================================================
 
+async def _lock_user_memories(cursor, telegram_user_id):
+    # Serialize saves/replacements, including collisions with forgotten rows.
+    await cursor.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended('long_term_memories:' || %s::text, 0))",
+        (telegram_user_id,),
+    )
+
+
 async def save_long_term_memory(
     telegram_user_id: int,
     content: str,
@@ -162,6 +170,7 @@ async def save_long_term_memory(
     ) as connection:
 
         async with connection.cursor() as cursor:
+            await _lock_user_memories(cursor, telegram_user_id)
 
             await cursor.execute(
                 """
@@ -520,6 +529,30 @@ async def replace_long_term_memory(
     ) as connection:
 
         async with connection.cursor() as cursor:
+            await _lock_user_memories(cursor, telegram_user_id)
+            await cursor.execute(
+                "SELECT id FROM long_term_memories "
+                "WHERE telegram_user_id = %s AND id = %s AND is_active = TRUE FOR UPDATE",
+                (telegram_user_id, memory_id),
+            )
+            if not await cursor.fetchone():
+                return None
+
+            await cursor.execute(
+                "SELECT id FROM long_term_memories "
+                "WHERE telegram_user_id = %s AND content_hash = %s AND id <> %s FOR UPDATE",
+                (telegram_user_id, content_hash, memory_id),
+            )
+            duplicate = await cursor.fetchone()
+            if duplicate:
+                # Reuse matching content, even if previously forgotten. Keep the
+                # superseded record inactive; both writes commit together.
+                await cursor.execute(
+                    "UPDATE long_term_memories SET is_active = FALSE, updated_at = NOW() "
+                    "WHERE telegram_user_id = %s AND id = %s",
+                    (telegram_user_id, memory_id),
+                )
+                memory_id = duplicate[0]
 
             await cursor.execute(
                 """
@@ -533,11 +566,11 @@ async def replace_long_term_memory(
                     embedding = %s,
                     embedding_model = %s,
                     source = %s,
+                    is_active = TRUE,
                     updated_at = NOW()
 
                 WHERE telegram_user_id = %s
                 AND id = %s
-                AND is_active = TRUE
 
                 RETURNING id
                 """,

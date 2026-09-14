@@ -10,6 +10,7 @@ from telegram.ext import ApplicationHandlerStop
 from database.personal import fetch, get_timezone, set_timezone
 from tools.personal_tools import execute_personal_tool
 from services.vision import analyze_image_with_vision
+from services.ai_requests import AIRequestError
 from utils.telegram_text import send_long_message
 
 logger = logging.getLogger(__name__)
@@ -115,7 +116,9 @@ async def on_error(update, context):
     logger.error('Telegram handler failed error=%s', type(context.error).__name__)
     if isinstance(update, Update) and update.effective_message:
         try:
-            await update.effective_message.reply_text('That operation failed. Please try again shortly.')
+            message = (str(context.error) if isinstance(context.error, AIRequestError)
+                       else 'That operation failed. Please try again shortly.')
+            await update.effective_message.reply_text(message)
         except Exception:
             pass
 

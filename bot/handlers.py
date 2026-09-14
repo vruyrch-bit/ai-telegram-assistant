@@ -1,6 +1,7 @@
 import logging
 
 import groq
+from services.ai_requests import AIRequestError
 
 from telegram import Update
 from telegram.constants import ChatAction
@@ -192,6 +193,9 @@ async def handle_message(
             update.message.text,
         )
 
+    except AIRequestError as error:
+        await update.message.reply_text(str(error))
+
     except groq.RateLimitError:
         await update.message.reply_text(
             "The AI rate limit has been reached. "
@@ -203,12 +207,8 @@ async def handle_message(
             "The AI took too long to respond."
         )
 
-    except Exception:
-        logger.exception(
-            "Text processing error "
-            "user_id=%s",
-            telegram_user_id,
-        )
+    except Exception as error:
+        logger.error("Text processing error error=%s", type(error).__name__)
 
         await update.message.reply_text(
             "Something went wrong."
@@ -282,12 +282,11 @@ async def handle_voice(
             transcription,
         )
 
-    except Exception:
-        logger.exception(
-            "Voice processing error "
-            "user_id=%s",
-            telegram_user_id,
-        )
+    except AIRequestError as error:
+        await update.message.reply_text(str(error))
+
+    except Exception as error:
+        logger.error("Voice processing error error=%s", type(error).__name__)
 
         await update.message.reply_text(
             "I couldn't process that voice message."

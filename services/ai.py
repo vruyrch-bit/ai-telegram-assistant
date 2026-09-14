@@ -5,7 +5,7 @@ import re
 import json
 import logging
 
-from groq import AsyncGroq
+from groq import APIError, AsyncGroq
 
 from config import (
     AI_MODEL,
@@ -29,6 +29,8 @@ from tools.memory_tools import (
 
 from tools.personal_tools import PERSONAL_TOOLS, MODELS, execute_personal_tool
 from database.personal import get_timezone, record_tool
+from services.ai_requests import AIRequestError, request_completion
+from services.ai_responses import final_answer, interrupted_answer
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +55,7 @@ from config import AI_PROVIDER
 from services.local_ai import LocalClient
 
 client = LocalClient() if AI_PROVIDER == "local" else AsyncGroq(
-    api_key=GROQ_API_KEY, timeout=30.0, max_retries=1,
+    api_key=GROQ_API_KEY, timeout=30.0, max_retries=0,
 )
 
 
@@ -144,7 +146,14 @@ async def ask_ai(
     messages.append({"role": "system", "content":
         f"Current UTC time: {datetime.now(timezone.utc).isoformat()}. Saved user timezone: {zone or 'not set'}. "
         "Convert local reminder dates to explicit offsets for that timezone. Never invent a timezone."})
-    messages.extend(history)
+    # Remove reasoning saved by older vision replies without changing stored data.
+    for message in history:
+        if message.get('role') == 'assistant':
+            cleaned = final_answer(message.get('content'))
+            if cleaned:
+                messages.append({**message, 'content': cleaned})
+        else:
+            messages.append(message)
 
     if memory_context:
         messages.append(
@@ -184,18 +193,23 @@ async def ask_ai(
         }
     )
 
+    tool_results = []
     for tool_round in range(
         MAX_TOOL_ROUNDS
     ):
-        response = (
-            await client.chat.completions.create(
+        try:
+            response = await request_completion(
+                client,
                 model=route_model(user_message),
                 messages=messages,
                 tools=AI_TOOLS,
                 tool_choice="auto",
                 max_completion_tokens=1500,
             )
-        )
+        except AIRequestError as error:
+            return interrupted_answer(str(error), tool_results)
+        except APIError:
+            return interrupted_answer("The AI service couldn't complete this request.", tool_results)
 
         response_message = (
             response
@@ -209,20 +223,18 @@ async def ask_ai(
         )
 
         if not tool_calls:
-            content = (
-                response_message.content
-                or ""
-            ).strip()
+            content = final_answer(response_message.content)
 
             if content:
                 return content
 
-            return (
-                "I couldn't generate a response."
-            )
+            return interrupted_answer("I couldn't generate a response.", tool_results)
 
         if len(tool_calls) > 10:
-            return "That request requires too many actions at once. Please split it into smaller requests."
+            return interrupted_answer(
+                "That request requires too many actions at once. Please split it into smaller requests.",
+                tool_results,
+            )
         messages.append(response_message)
 
         for tool_call in tool_calls[:10]:
@@ -277,13 +289,8 @@ async def ask_ai(
                             )
                         )
 
-                except Exception:
-                    logger.exception(
-                        "AI tool failed "
-                        "user_id=%s tool=%s",
-                        telegram_user_id,
-                        tool_name,
-                    )
+                except Exception as error:
+                    logger.error("AI tool failed tool=%s error=%s", tool_name, type(error).__name__)
 
                     tool_result = json.dumps(
                         {
@@ -294,6 +301,7 @@ async def ask_ai(
                         }
                     )
 
+            tool_results.append((tool_name, json.loads(tool_result)))
             try:
                 await asyncio.wait_for(record_tool(telegram_user_id, tool_name,
                     bool(json.loads(tool_result).get("success")), int((time.monotonic() - started) * 1000)), 2)
@@ -311,7 +319,7 @@ async def ask_ai(
                 }
             )
 
-    return (
-        "I couldn't finish that operation. "
-        "Please try again."
+    return interrupted_answer(
+        "I reached the action limit before finishing the whole request.",
+        tool_results,
     )

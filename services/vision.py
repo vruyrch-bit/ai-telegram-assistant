@@ -20,6 +20,8 @@ from config import (
 from database.images import save_latest_image
 from database.memory import save_message
 from services.ocr import ocr_image
+from services.ai_requests import request_completion
+from services.ai_responses import final_answer
 
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,7 @@ from config import AI_PROVIDER
 from services.local_ai import LocalClient
 
 vision_client = LocalClient() if AI_PROVIDER == "local" else AsyncGroq(
-    api_key=GROQ_API_KEY, timeout=30.0, max_retries=1,
+    api_key=GROQ_API_KEY, timeout=30.0, max_retries=0,
 )
 
 
@@ -172,11 +174,13 @@ async def analyze_image_with_vision(
             ]
         )
 
+    options = {}
+    if AI_PROVIDER == 'groq' and VISION_MODEL in {'qwen/qwen3.6-27b', 'qwen/qwen3.8-27b'}:
+        options = {'reasoning_format': 'hidden', 'reasoning_effort': 'none'}
+
     response = (
-        await vision_client
-        .chat
-        .completions
-        .create(
+        await request_completion(
+            vision_client,
             model=VISION_MODEL,
             messages=[
                 {
@@ -200,16 +204,16 @@ async def analyze_image_with_vision(
             ],
             temperature=0.2,
             max_completion_tokens=1200,
+            **options,
         )
     )
 
-    return (
-        response
-        .choices[0]
-        .message
-        .content
-        or ""
-    ).strip()
+    answer = final_answer(response.choices[0].message.content)
+    if not answer:
+        return "I couldn't finish the image answer. Please ask again."
+    if getattr(response.choices[0], 'finish_reason', None) == 'length':
+        answer += '\n\nThe answer was cut short. Ask a narrower question for more detail.'
+    return answer
 
 
 async def process_image_upload(
