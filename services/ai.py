@@ -194,12 +194,18 @@ async def ask_ai(
     )
 
     tool_results = []
+
+    # Provider choice persists for this
+    # entire user request/tool loop.
+    provider_state = {}
+
     for tool_round in range(
         MAX_TOOL_ROUNDS
     ):
         try:
             response = await request_completion(
                 client,
+                provider_state=provider_state,
                 model=route_model(user_message),
                 messages=messages,
                 tools=AI_TOOLS,

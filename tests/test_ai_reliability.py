@@ -366,3 +366,108 @@ async def test_groq_rate_limit_without_fallback_returns_safe_error(
             exc_info.value
         ).lower()
     )
+
+
+@pytest.mark.asyncio
+async def test_openrouter_remains_sticky_after_fallback(
+    monkeypatch,
+):
+    import services.ai_requests as ai_requests
+
+    calls = {
+        "groq": 0,
+        "openrouter": 0,
+    }
+
+    class FakeGroqCompletions:
+        async def create(
+            self,
+            **kwargs,
+        ):
+            calls["groq"] += 1
+
+            error = groq.APIStatusError(
+                "rate limited",
+                response=type(
+                    "Response",
+                    (),
+                    {
+                        "status_code": 429,
+                        "headers": {
+                            "retry-after": "10",
+                        },
+                        "request": None,
+                    },
+                )(),
+                body={},
+            )
+
+            raise error
+
+    class FakeGroqClient:
+        class Chat:
+            completions = (
+                FakeGroqCompletions()
+            )
+
+        chat = Chat()
+
+    responses = [
+        object(),
+        object(),
+    ]
+
+    async def fake_openrouter(
+        **kwargs,
+    ):
+        calls["openrouter"] += 1
+        return responses[
+            calls["openrouter"] - 1
+        ]
+
+    monkeypatch.setattr(
+        ai_requests,
+        "openrouter_is_configured",
+        lambda: True,
+    )
+
+    monkeypatch.setattr(
+        ai_requests,
+        "request_openrouter_completion",
+        fake_openrouter,
+    )
+
+    provider_state = {}
+
+    first = (
+        await ai_requests.request_completion(
+            FakeGroqClient(),
+            provider_state=provider_state,
+            model="groq-model",
+            messages=[],
+        )
+    )
+
+    assert first is responses[0]
+    assert (
+        provider_state["provider"]
+        == "openrouter"
+    )
+
+    second = (
+        await ai_requests.request_completion(
+            FakeGroqClient(),
+            provider_state=provider_state,
+            model="groq-model",
+            messages=[],
+        )
+    )
+
+    assert second is responses[1]
+
+    # Groq was tried only before fallback.
+    assert calls["groq"] == 1
+
+    # Both remaining completions used
+    # OpenRouter.
+    assert calls["openrouter"] == 2

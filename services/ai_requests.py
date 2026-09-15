@@ -135,8 +135,34 @@ async def _try_openrouter(
 
 async def request_completion(
     client,
+    provider_state=None,
     **kwargs,
 ):
+    if provider_state is None:
+        provider_state = {}
+
+    # Once one conversation falls back to
+    # OpenRouter, keep using OpenRouter for
+    # every remaining tool round.
+    if (
+        provider_state.get("provider")
+        == "openrouter"
+    ):
+        fallback_response = (
+            await _try_openrouter(
+                kwargs
+            )
+        )
+
+        if fallback_response is not None:
+            return fallback_response
+
+        raise AIRequestError(
+            "The secondary AI service is "
+            "temporarily unavailable. "
+            "Please try again shortly."
+        )
+
     last_status = None
 
     for attempt in range(2):
@@ -242,6 +268,15 @@ async def request_completion(
     )
 
     if fallback_response is not None:
+        provider_state[
+            "provider"
+        ] = "openrouter"
+
+        logger.info(
+            "AI conversation switched to "
+            "secondary cloud provider"
+        )
+
         return fallback_response
 
     if last_status == 429:
