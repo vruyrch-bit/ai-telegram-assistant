@@ -1,310 +1,401 @@
 # AI Telegram Assistant
 
-Personal assistant upgrades are implemented locally. See [UPGRADE_NOTES.md](UPGRADE_NOTES.md) for features, configuration, validation and deployment steps.
+A production-style personal AI assistant built with Python and Telegram.
 
-A production-style multimodal AI assistant built with Python and deployed on Railway.
+The project combines conversational AI, persistent PostgreSQL storage, long-term memory, document retrieval, image understanding, web search, task management, reminders, and multi-provider AI fallback in one Telegram interface.
 
-It combines conversational AI, PostgreSQL memory, natural-language task tools, voice transcription, document RAG, OCR, image understanding, a FastAPI admin API, Docker, automated tests, and GitHub Actions CI/CD.
+It was built as a practical AI engineering project focused on reliability, tool use, retrieval, persistence, deployment, and safe failure handling.
+
+---
 
 ## Features
 
-- AI chat with persistent conversation memory
-- Natural-language task creation, listing, completion, and deletion
-- Telegram voice-message transcription
-- PDF, DOCX, and TXT document support
-- Hybrid semantic + keyword RAG
-- OCR fallback for scanned PDF pages
-- Photo, screenshot, and image understanding
-- Image OCR for reading visible text
-- Follow-up questions about the latest uploaded image
-- FastAPI admin API with API-key authentication
-- PostgreSQL persistence
-- Dockerized deployment
-- Railway production deployment
-- Automated tests with pytest
-- GitHub Actions CI
+### AI Chat
+- Natural-language conversations through Telegram
+- Groq as the primary cloud inference provider
+- OpenRouter free-model fallback when the primary provider is unavailable or rate-limited
+- Provider stickiness during multi-step tool workflows
+- Bounded retries and user-friendly failure messages
+- Reasoning output is filtered from user-visible responses
 
-## Example Interactions
+### Long-Term Memory
+- Persistent user memories stored in PostgreSQL
+- Semantic memory retrieval
+- Memory deduplication
+- Preference replacement
+- Importance and recency ranking
+- Explicit memory commands:
+  - `/remember`
+  - `/memory`
+  - `/forget`
 
-### Tasks
+### Document RAG
+Supports:
+
+- PDF
+- scanned PDF with OCR
+- TXT
+- DOCX
+
+Documents are:
+
+1. parsed,
+2. split into chunks,
+3. embedded,
+4. stored,
+5. retrieved semantically when relevant.
+
+Features include:
+
+- hybrid semantic + keyword retrieval
+- document collections
+- document-specific searching
+- stable document IDs
+- ownership validation
+- single-document deletion with confirmation
+
+Commands:
 
 ```text
-Add finish calculus homework to my tasks
-What tasks do I have?
-Mark finish calculus homework as done
-Delete finish calculus homework from my tasks
+/files
+/deletefile ID
 ```
 
-The assistant uses real tool calls for task operations and does not claim success unless the database action actually succeeds.
+### Image Understanding
+- Upload photos and screenshots
+- OCR text extraction
+- Vision-model analysis
+- Persistent recent image history
+- Query the latest uploaded image naturally
+- Query older images by ID
+- Clear stored image history
 
-### Documents
-
-Upload a PDF, DOCX, or TXT file and ask:
+Commands:
 
 ```text
-Summarize this document
-What are the main technical requirements?
-Explain this section
-Find the part about PostgreSQL
+/images
+/image ID your question
+/clearimages confirm
 ```
 
-### Images
+### Web Search
+- Current public web search through DDGS
+- No separate search API key required
+- Search results are passed back to the AI for answer composition
+- Completed search results are preserved if the AI provider fails afterward
 
-Send a photo or screenshot. The bot stores it and waits for instructions.
+Example:
 
 ```text
-User: [uploads image]
-
-Bot:
-Image received. Tell me what you'd like me to do with it.
-
-User:
-Read the text in this screenshot
+Search the web for the latest Python release.
 ```
 
-You can also ask:
+### Task Management
+Tasks support:
+
+- creation
+- completion
+- deletion
+- editing
+- priority
+- project
+- notes
+- deadlines
+- search
+- daily recurrence
+- weekly recurrence
+
+Task numbers shown to the user are clean `1, 2, 3...` values.
+
+Internal PostgreSQL primary keys remain private and are not exposed to the user.
+
+Example:
 
 ```text
-Explain this diagram
-What objects are visible?
-What does this image show?
+Create a high priority task to order Sitka spruce tomorrow.
+Complete task 1.
+Make task 2 high priority.
+```
+
+Command:
+
+```text
+/tasks
+```
+
+### Recurring Tasks
+
+Completing a recurring task automatically creates its next occurrence while preserving:
+
+- title
+- priority
+- project
+- notes
+- recurrence settings
+
+### Reminders
+- Natural-language reminder creation
+- User timezone support
+- One-time reminders
+- Daily reminders
+- Weekly reminders
+- Persistent PostgreSQL scheduling
+
+Examples:
+
+```text
+Remind me tomorrow at 5 PM.
+Remind me every day at 8 PM.
+```
+
+Commands:
+
+```text
+/reminders
+/timezone Asia/Yerevan
+```
+
+### Personal Notes
+Persistent project and knowledge notes with search support.
+
+Example:
+
+```text
+Save a project note that the guitar top should use solid Sitka spruce.
+```
+
+Command:
+
+```text
+/notes
 ```
 
 ### Voice
+- Telegram voice-message transcription
+- Whisper-based speech recognition
 
-Voice messages are transcribed and routed through the same assistant pipeline, so they can also trigger task tools and normal assistant actions.
+### Admin API
+A separate FastAPI service provides authenticated administrative endpoints for:
+
+- health status
+- application statistics
+- activity information
+
+Example:
+
+```text
+GET /health
+GET /stats
+GET /activity
+```
+
+Protected endpoints require an API key.
+
+---
 
 ## Architecture
 
 ```text
-                         Telegram User
-                               |
-                               v
-                    +----------------------+
-                    |    Telegram Bot      |
-                    |  Python / AsyncIO    |
-                    +----------+-----------+
-                               |
-          +--------------------+----------------------+
-          |                    |                      |
-          v                    v                      v
-      Text / Tasks         Voice Input          Files / Images
-          |                    |                      |
-          v                    v                      |
-      LLM + Tools           Whisper                   |
-          |                                           |
-          |                         +-----------------+----------------+
-          |                         |                                  |
-          |                         v                                  v
-          |                  Document Pipeline                  Vision Pipeline
-          |                         |                                  |
-          |                  PDF / DOCX / TXT                   Image + OCR
-          |                         |
-          |                  OCR when needed
-          |                         |
-          |                      FastEmbed
-          |                         |
-          |                  Hybrid Retrieval
-          |                         |
-          +-------------------------+-------------------------------+
-                                    |
-                                    v
-                               PostgreSQL
-                    +--------------------------------+
-                    | Messages                       |
-                    | Tasks                          |
-                    | Documents                      |
-                    | Document chunks                |
-                    | Embeddings                     |
-                    | Latest image                   |
-                    +--------------------------------+
-
-                           FastAPI Admin API
-                                    |
-                                    v
-                               PostgreSQL
+Telegram
+   │
+   ▼
+python-telegram-bot
+   │
+   ▼
+AI Orchestrator
+   │
+   ├── Groq
+   │      │
+   │      └── OpenRouter fallback
+   │
+   ├── Task tools
+   ├── Memory tools
+   ├── Reminder tools
+   ├── Notes
+   ├── Web search
+   ├── Vision / OCR
+   └── Document RAG
+             │
+             ▼
+         PostgreSQL
 ```
+
+Main project structure:
+
+```text
+telegram-ai-bot/
+├── main.py
+├── api.py
+├── config.py
+│
+├── bot/
+│   ├── app.py
+│   ├── commands.py
+│   ├── handlers.py
+│   ├── document_handler.py
+│   └── personal_commands.py
+│
+├── database/
+│   ├── core.py
+│   ├── memory.py
+│   ├── tasks.py
+│   ├── documents.py
+│   ├── images.py
+│   ├── long_term_memory.py
+│   ├── personal.py
+│   └── upgrades.py
+│
+├── services/
+│   ├── ai.py
+│   ├── ai_requests.py
+│   ├── ai_responses.py
+│   ├── cloud_fallback.py
+│   ├── local_ai.py
+│   ├── voice.py
+│   ├── vision.py
+│   ├── ocr.py
+│   ├── document_parser.py
+│   ├── memory.py
+│   ├── jobs.py
+│   ├── scheduling.py
+│   └── web_search.py
+│
+├── rag/
+│   ├── embeddings.py
+│   └── retrieval.py
+│
+├── tools/
+│   ├── task_tools.py
+│   ├── memory_tools.py
+│   └── personal_tools.py
+│
+├── utils/
+│   └── telegram_text.py
+│
+├── scripts/
+│   └── test_disposable_postgres.py
+│
+└── tests/
+```
+
+---
 
 ## Tech Stack
 
 ### Backend
-- Python 3.12
-- AsyncIO
-- python-telegram-bot
+- Python
+- asyncio
 - FastAPI
-- Uvicorn
+- python-telegram-bot
 
-### AI
-- Groq API
-- GPT-OSS for chat and tool use
-- Whisper for voice transcription
-- Multimodal vision model
-- Function/tool calling
-
-### RAG and Documents
-- FastEmbed
-- `BAAI/bge-small-en-v1.5`
-- NumPy cosine similarity
-- Hybrid semantic + lexical retrieval
-- PyPDF
-- python-docx
-- PyMuPDF
-- Pillow
-- Tesseract OCR
-
-### Data and Infrastructure
+### Database
 - PostgreSQL
 - psycopg
+
+### AI
+- Groq
+- OpenRouter
+- optional Ollama adapter
+- Whisper speech recognition
+- vision-capable language models
+
+### Retrieval
+- FastEmbed
+- `BAAI/bge-small-en-v1.5`
+- hybrid semantic and keyword retrieval
+
+### Documents
+- PyMuPDF
+- python-docx
+- Tesseract OCR
+- Pillow
+
+### Search
+- DDGS
+
+### Infrastructure
 - Docker
-- Docker Compose
 - Railway
+- GitHub
 - GitHub Actions
-- pytest
-- pytest-asyncio
 
-## Project Structure
+---
 
-```text
-ai-telegram-assistant/
-├── main.py
-├── api.py
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-├── pytest.ini
-├── README.md
-├── tests/
-│   ├── test_api.py
-│   └── test_core.py
-└── .github/
-    └── workflows/
-        └── ci.yml
-```
+## AI Provider Reliability
 
-## RAG Pipeline
-
-When a document is uploaded:
+The assistant uses a fallback strategy:
 
 ```text
-Document
-   |
-   v
-Text extraction
-   |
-   +--> OCR fallback for scanned PDF pages
-   |
-   v
-Chunking
-   |
-   v
-FastEmbed embeddings
-   |
-   v
-PostgreSQL
+Groq
+  │
+  ├── success → continue
+  │
+  └── temporary failure / rate limit
+          │
+          ▼
+     OpenRouter
+          │
+          ▼
+   remain on OpenRouter
+   for the rest of the
+   current tool workflow
 ```
 
-When the user asks a document question:
+Provider stickiness is important for multi-step tool calls.
+
+For example:
 
 ```text
-Question
-   |
-   v
-Query embedding
-   |
-   +--> Semantic similarity
-   |
-   +--> Keyword relevance
-   |
-   v
-Hybrid ranking
-   |
-   v
-Best matching chunks
-   |
-   v
-LLM answer
+AI requests web search
+→ web search runs
+→ primary provider becomes rate-limited
+→ OpenRouter takes over
+→ remaining tool conversation stays on OpenRouter
+→ final answer is generated
 ```
 
-The retrieval score currently combines:
+This prevents tool-call histories from being passed back and forth between incompatible providers during the same request.
 
-```text
-85% semantic similarity
-15% keyword relevance
-```
-
-## OCR
-
-For PDFs, the bot first attempts normal text extraction. If a page contains too little readable text, the page is rendered with PyMuPDF and passed through Tesseract OCR.
-
-OCR is page-by-page, so mixed PDFs containing both normal text and scanned pages are supported.
-
-## Image Understanding
-
-Supported image formats include:
-
-- Telegram photos
-- JPG / JPEG
-- PNG
-- WEBP
-- Screenshots
-- Diagrams
-- Images containing text
-
-The bot stores the latest uploaded image and waits for a follow-up instruction instead of immediately generating a long description.
-
-Clear the latest stored image with:
-
-```text
-/clearimage
-```
-
-## Task Tool Calling
-
-The assistant has persistent task tools:
-
-- `create_task`
-- `list_tasks`
-- `complete_task`
-- `delete_task`
-
-Task data is stored in PostgreSQL.
-
-## FastAPI Admin API
-
-The project also exposes a separate FastAPI service.
-
-Endpoints include:
-
-```text
-GET    /
-GET    /health
-GET    /stats
-GET    /users
-GET    /users/{telegram_user_id}/messages
-DELETE /users/{telegram_user_id}/messages
-```
-
-Protected routes require the `X-API-Key` header.
+---
 
 ## Environment Variables
 
-Create a local `.env` file:
+Create a `.env` file locally or configure equivalent variables in your deployment platform.
+
+Example:
 
 ```env
-TELEGRAM_TOKEN=your_telegram_token
-GROQ_API_KEY=your_groq_api_key
-DATABASE_URL=your_postgresql_connection_string
+TELEGRAM_BOT_TOKEN=your_telegram_token
+
+DATABASE_URL=postgresql://...
+
+GROQ_API_KEY=your_groq_key
+
+OPENROUTER_API_KEY=your_openrouter_key
+OPENROUTER_MODEL=openrouter/free
+
 ADMIN_API_KEY=your_admin_api_key
 ```
 
-Never commit `.env` or real API keys to Git.
+Additional configuration variables may be available in `config.py`.
 
-## Run Locally
+Never commit real API keys or credentials to Git.
 
-Create and activate a virtual environment:
+---
+
+## Installation
+
+Clone the repository:
 
 ```bash
-python -m venv venv
+git clone https://github.com/vruyrch-bit/ai-telegram-assistant.git
+cd ai-telegram-assistant
+```
+
+Create a virtual environment:
+
+```bash
+python3 -m venv venv
 source venv/bin/activate
 ```
 
@@ -314,83 +405,84 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Make sure PostgreSQL and Tesseract OCR are installed.
-
-Start the Telegram bot:
+Configure environment variables, then run:
 
 ```bash
 python main.py
 ```
 
-Start the API:
+---
+
+## Running the API
 
 ```bash
-uvicorn api:app --reload
+uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
-## Docker
+Health endpoint:
 
-Build the image:
-
-```bash
-docker build -t ai-telegram-assistant .
+```text
+GET /health
 ```
 
-Run with Docker Compose:
+---
 
-```bash
-docker compose up --build
-```
+## Testing
 
-## Tests
-
-Run:
+Standard test suite:
 
 ```bash
 pytest -q
 ```
 
-The test suite covers core behavior such as:
+Dependency verification:
 
-- FastAPI routes
-- API authentication
-- Telegram text cleanup
-- Document chunking
-- Keyword scoring
-- Vector similarity
-- Image-processing helpers
-- Image follow-up detection
-- Task-tool execution
-
-## CI/CD
-
-GitHub Actions runs on pushes and pull requests.
-
-```text
-Checkout
-   |
-   v
-Python 3.12
-   |
-   v
-Install dependencies
-   |
-   v
-pip check
-   |
-   v
-Compile Python
-   |
-   v
-pytest
-   |
-   v
-Docker build
+```bash
+python -m pip check
 ```
 
-## Production Deployment
+Whitespace verification:
 
-The application is deployed on Railway using separate services:
+```bash
+git diff --check
+```
+
+Compile verification:
+
+```bash
+python -m compileall -q \
+  main.py \
+  api.py \
+  config.py \
+  database \
+  rag \
+  services \
+  tools \
+  bot \
+  utils \
+  tests \
+  scripts
+```
+
+The project also includes a disposable PostgreSQL validation script:
+
+```bash
+BOT_TEST_LOCAL_WHISPER=1 \
+HF_HUB_OFFLINE=1 \
+python scripts/test_disposable_postgres.py -q
+```
+
+Current full disposable-database validation:
+
+```text
+164 passed
+```
+
+---
+
+## Deployment
+
+The project is deployed using Railway with separate services for:
 
 ```text
 Telegram Bot
@@ -398,73 +490,108 @@ FastAPI API
 PostgreSQL
 ```
 
-The API includes a database-backed health endpoint:
+PostgreSQL provides persistent state across deployments.
 
-```text
-GET /health
-```
+Docker configuration is also included for reproducible deployment.
 
-## Security
+---
 
-The project includes several security measures:
+## Reliability and Safety
 
-- Secrets are loaded from environment variables
-- `.env` is excluded from Git and Docker
-- Admin API routes require an API key
-- Uploaded document content is treated as untrusted data
-- User data is separated by Telegram user ID
-- Task actions are verified through actual tool results
-- File and image size limits are enforced
-- OCR work is capped
-- Images are resized before vision processing
+The project includes several protections intended for production-style behavior:
 
-## What I Learned
+- private-chat access controls
+- optional user-ID allowlist
+- request rate limiting
+- database ownership checks
+- bounded AI retries
+- cloud-provider fallback
+- protection against accidental paid OpenRouter model routing
+- safe error messages
+- sanitized logging
+- persistent tool-result handling
+- memory deduplication
+- transaction locking for sensitive updates
+- document ownership validation
+- confirmation before destructive document deletion
+- hidden internal database task IDs
+- reasoning-output filtering
 
-This project was built to go beyond a basic chatbot wrapper and practice production-style AI engineering.
+Secrets are never intentionally included in logs or bot responses.
 
-It involved:
+---
 
-- asynchronous Python
-- third-party AI APIs
-- REST API design
-- authentication
-- PostgreSQL
-- database migrations
-- AI tool calling
-- embeddings
+## Current Status
+
+Core functionality is implemented and deployed.
+
+Validated areas include:
+
+- AI chat
+- PostgreSQL persistence
+- document RAG
+- scanned-document OCR
+- image understanding
+- image history
+- long-term memory
+- task management
+- recurring tasks
+- reminders
+- notes
+- DDGS web search
+- Groq → OpenRouter fallback
+- multi-provider tool workflows
+- FastAPI administration API
+- Railway deployment
+- production smoke testing
+
+---
+
+## Possible Future Improvements
+
+Potential future additions include:
+
+- local Ollama inference
+- spoken AI responses
+- streamed Telegram responses
+- web dashboard
+- usage quotas
+- configurable data-retention policies
+- additional model providers
+- more advanced agent workflows
+- richer observability and analytics
+
+---
+
+## Why I Built This
+
+This project was built to move beyond a simple chatbot and explore the engineering required for a persistent AI application.
+
+It covers several concepts important to practical AI engineering:
+
+- LLM tool calling
 - retrieval-augmented generation
-- hybrid search
-- OCR
+- embeddings
+- semantic search
+- persistent memory
 - multimodal AI
-- file processing
-- Docker
+- OCR
+- asynchronous Python
+- structured validation
+- PostgreSQL
+- APIs
+- containerization
 - cloud deployment
 - automated testing
-- CI/CD
-- production debugging
-- structured logging
+- provider failover
+- reliability engineering
 
-## Status
+The goal was to build an assistant that can not only generate text, but also interact with persistent tools and data while continuing to behave predictably when external AI services fail.
 
-The original portfolio baseline is complete. See UPGRADE_NOTES.md for the current personal-upgrade status and remaining work.
-
-```text
-[✓] AI chat
-[✓] Persistent memory
-[✓] Voice transcription
-[✓] Natural-language task tools
-[✓] FastAPI REST API
-[✓] PostgreSQL
-[✓] PDF / DOCX / TXT support
-[✓] Semantic RAG
-[✓] OCR
-[✓] Image understanding
-[✓] Docker
-[✓] Railway deployment
-[✓] Automated tests
-[✓] GitHub Actions CI
-```
+---
 
 ## Author
 
-Vruyr Chakhmakhchyan
+**Vruyr Chakhmakhchyan**
+
+GitHub: [@vruyrch-bit](https://github.com/vruyrch-bit)
