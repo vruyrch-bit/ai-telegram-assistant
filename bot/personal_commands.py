@@ -46,6 +46,7 @@ async def help_command(update, context):
         '/tasks — tasks\n/reminders — upcoming reminders\n'
         '/timezone Asia/Yerevan — set your timezone\n'
         '/memory — personal memories\n/notes [search] — saved notes\n'
+        '/files — uploaded documents with IDs\n/deletefile ID — remove one document\n'
         '/images — recent images\n/image ID question — ask about an older image\n'
         '/clearimages confirm — delete image history and latest image\n\n'
         'You can also ask naturally: “Remind me tomorrow at 5 PM”, '
@@ -148,6 +149,7 @@ async def setup_personal(application):
         await application.bot.set_my_commands([BotCommand(name, description) for name, description in [
             ('help', 'Commands and examples'), ('tasks', 'Your tasks'), ('reminders', 'Upcoming reminders'),
             ('timezone', 'View or set timezone'), ('memory', 'Personal memories'), ('notes', 'Saved knowledge'),
+            ('files', 'Uploaded documents'), ('deletefile', 'Remove one document'),
             ('images', 'Recent images'), ('image', 'Ask about an older image'), ('clearimages', 'Delete stored images')]])
     except Exception as error:
         logger.warning('Could not register command menu: %s', type(error).__name__)

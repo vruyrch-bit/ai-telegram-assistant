@@ -73,6 +73,11 @@ load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_MODEL = os.getenv(
+    "OPENROUTER_MODEL",
+    "openrouter/free",
+)
 DATABASE_URL = os.getenv("DATABASE_URL")
 FASTEMBED_CACHE_DIR = os.getenv("FASTEMBED_CACHE_DIR")
 

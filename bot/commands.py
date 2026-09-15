@@ -8,6 +8,8 @@ from database.memory import (
 from database.documents import (
     load_documents,
     delete_documents,
+    get_document,
+    delete_document,
 )
 
 from database.images import (
@@ -63,6 +65,7 @@ async def start(
         "/memory - show long-term memories\n"
         "/forget - forget one memory\n"
         "/files - show uploaded files\n"
+        "/deletefile - delete one uploaded file\n"
         "/clearfiles - delete uploaded files\n"
         "/clearimage - forget the latest image\n"
         "/clear - clear conversation memory"
@@ -116,12 +119,43 @@ async def files_command(
         created_at,
     ) in documents:
         lines.append(
-            f"• {filename}"
+            f"• {document_id}. {filename}"
         )
 
-    await update.message.reply_text(
-        "\n".join(lines)
-    )
+    from utils.telegram_text import send_long_message
+    lines.extend(['', 'Remove one file: /deletefile ID'])
+    await send_long_message(update, "\n".join(lines))
+
+
+async def delete_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    try:
+        document_id = int(args[0])
+        valid = (len(args) in {1, 2} and 0 < document_id < 2**63
+                 and (len(args) == 1 or args[1] == 'confirm'))
+    except (IndexError, ValueError):
+        valid = False
+    if not valid:
+        await update.message.reply_text('Usage: /deletefile ID\nUse /files to find the ID.')
+        return
+    user_id = update.effective_user.id
+    if len(args) == 1:
+        row = await get_document(user_id, document_id)
+        if row is None:
+            await update.message.reply_text('File not found.')
+            return
+        from utils.telegram_text import send_long_message
+        await send_long_message(update,
+            f'Delete file {row[0]}: {row[1]}?\n'
+            'This permanently removes this file and its searchable content.\n'
+            f'Confirm with /deletefile {document_id} confirm')
+        return
+    filename = await delete_document(user_id, document_id)
+    if filename is None:
+        await update.message.reply_text('File not found.')
+        return
+    from utils.telegram_text import send_long_message
+    await send_long_message(update, f'Deleted file {document_id}: {filename}')
 
 
 async def clear_files(

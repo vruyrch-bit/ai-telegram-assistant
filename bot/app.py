@@ -30,6 +30,7 @@ from bot.commands import (
     start,
     clear_memory,
     files_command,
+    delete_file_command,
     clear_files,
     clear_image_command,
     tasks_command,
@@ -139,6 +140,8 @@ def build_application():
             clear_files,
         )
     )
+
+    application.add_handler(CommandHandler("deletefile", delete_file_command))
 
     application.add_handler(
         CommandHandler(

@@ -224,3 +224,145 @@ def test_ddgs_uses_available_backends_automatically(monkeypatch):
     monkeypatch.setattr(web_search, 'DDGS', factory)
     assert web_search._search('fixture')[0]['href'] == 'https://python.org'
     search.text.assert_called_once_with('fixture', max_results=5, backend='auto', safesearch='moderate')
+
+
+@pytest.mark.asyncio
+async def test_groq_rate_limit_falls_back_to_openrouter(
+    monkeypatch,
+):
+    import services.ai_requests as ai_requests
+
+    class FakeRateLimitError(
+        groq.APIError
+    ):
+        pass
+
+    class FakeCompletions:
+        async def create(
+            self,
+            **kwargs,
+        ):
+            error = FakeRateLimitError(
+                "rate limited",
+                request=None,
+                body={},
+            )
+            error.status_code = 429
+            error.response = None
+            raise error
+
+    class FakeClient:
+        class Chat:
+            completions = FakeCompletions()
+
+        chat = Chat()
+
+    class FakeFallbackResponse:
+        pass
+
+    fallback_response = (
+        FakeFallbackResponse()
+    )
+
+    async def fake_openrouter(
+        **kwargs,
+    ):
+        return fallback_response
+
+    monkeypatch.setattr(
+        ai_requests,
+        "openrouter_is_configured",
+        lambda: True,
+    )
+
+    monkeypatch.setattr(
+        ai_requests,
+        "request_openrouter_completion",
+        fake_openrouter,
+    )
+
+    monkeypatch.setattr(
+        ai_requests,
+        "_retry_delay",
+        lambda error: 10,
+    )
+
+    response = (
+        await ai_requests.request_completion(
+            FakeClient(),
+            model="primary-model",
+            messages=[
+                {
+                    "role": "user",
+                    "content": "hello",
+                }
+            ],
+        )
+    )
+
+    assert response is fallback_response
+
+
+@pytest.mark.asyncio
+async def test_groq_rate_limit_without_fallback_returns_safe_error(
+    monkeypatch,
+):
+    import services.ai_requests as ai_requests
+
+    class FakeRateLimitError(
+        groq.APIError
+    ):
+        pass
+
+    class FakeCompletions:
+        async def create(
+            self,
+            **kwargs,
+        ):
+            error = FakeRateLimitError(
+                "rate limited",
+                request=None,
+                body={},
+            )
+            error.status_code = 429
+            error.response = None
+            raise error
+
+    class FakeClient:
+        class Chat:
+            completions = FakeCompletions()
+
+        chat = Chat()
+
+    monkeypatch.setattr(
+        ai_requests,
+        "openrouter_is_configured",
+        lambda: False,
+    )
+
+    monkeypatch.setattr(
+        ai_requests,
+        "_retry_delay",
+        lambda error: 10,
+    )
+
+    with pytest.raises(
+        ai_requests.AIRequestError
+    ) as exc_info:
+        await ai_requests.request_completion(
+            FakeClient(),
+            model="primary-model",
+            messages=[
+                {
+                    "role": "user",
+                    "content": "hello",
+                }
+            ],
+        )
+
+    assert (
+        "rate limit"
+        in str(
+            exc_info.value
+        ).lower()
+    )

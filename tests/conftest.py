@@ -10,6 +10,8 @@ os.environ.update(
     PYTHON_DOTENV_DISABLED='1',
     TELEGRAM_TOKEN='123456:test-telegram-token',
     GROQ_API_KEY='test-groq-key',
+    OPENROUTER_API_KEY='',
+    OPENROUTER_MODEL='openrouter/free',
     ADMIN_API_KEY='test-admin-key',
     DATABASE_URL='postgresql://test:test@127.0.0.1:1/test',
     AI_PROVIDER='groq',

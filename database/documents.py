@@ -124,3 +124,24 @@ async def delete_documents(
                 telegram_user_id,
             ),
         )
+
+
+async def get_document(telegram_user_id: int, document_id: int):
+    """Return only document metadata owned by this Telegram user."""
+    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as connection:
+        cursor = await connection.execute(
+            'SELECT id, filename FROM documents WHERE telegram_user_id = %s AND id = %s',
+            (telegram_user_id, document_id),
+        )
+        return await cursor.fetchone()
+
+
+async def delete_document(telegram_user_id: int, document_id: int):
+    """Delete one owned document; its chunks use the existing cascade constraint."""
+    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as connection:
+        cursor = await connection.execute(
+            'DELETE FROM documents WHERE telegram_user_id = %s AND id = %s RETURNING filename',
+            (telegram_user_id, document_id),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
