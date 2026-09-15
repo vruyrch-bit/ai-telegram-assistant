@@ -393,6 +393,19 @@ async def test_create_task_tool(
         fake_create_task,
     )
 
+    async def fake_get_task_number_map(
+        telegram_user_id,
+    ):
+        return {
+            42: 1,
+        }
+
+    monkeypatch.setattr(
+        task_tools_module,
+        "get_task_number_map",
+        fake_get_task_number_map,
+    )
+
 
     result = (
         await execute_task_tool(
@@ -412,7 +425,7 @@ async def test_create_task_tool(
 
 
     assert '"success": true' in result
-    assert '"task_id": 42' in result
+    assert '"task_number": 1' in result
     assert (
         "Finish calculus homework"
         in result
@@ -491,6 +504,19 @@ async def test_complete_task_tool(
         fake_complete_task,
     )
 
+    async def fake_resolve_task_number(
+        telegram_user_id,
+        task_number,
+    ):
+        assert task_number == 5
+        return 105
+
+    monkeypatch.setattr(
+        task_tools_module,
+        "resolve_task_number",
+        fake_resolve_task_number,
+    )
+
 
     result = (
         await execute_task_tool(
@@ -527,6 +553,19 @@ async def test_delete_task_tool(
         task_tools_module,
         "delete_task",
         fake_delete_task,
+    )
+
+    async def fake_resolve_task_number(
+        telegram_user_id,
+        task_number,
+    ):
+        assert task_number == 9
+        return 109
+
+    monkeypatch.setattr(
+        task_tools_module,
+        "resolve_task_number",
+        fake_resolve_task_number,
     )
 
 

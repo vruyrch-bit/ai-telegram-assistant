@@ -8,6 +8,10 @@ from psycopg import sql
 
 from database.personal import fetch, get_timezone, set_timezone
 from services.scheduling import parse_due
+from database.tasks import (
+    resolve_task_number,
+    get_task_number_map,
+)
 
 
 class Arguments(BaseModel):
@@ -39,7 +43,13 @@ class ListReminders(Arguments):
 
 
 class EditTask(Arguments):
-    task_id: int = Field(gt=0)
+    task_id: int = Field(
+        gt=0,
+        description=(
+            "Visible task number shown by /tasks "
+            "or search_tasks."
+        ),
+    )
     title: str | None = Field(default=None, min_length=1, max_length=500)
     due_date: str | None = Field(default=None, max_length=100, description=(
         'Resolve relative dates using current time and saved timezone. '
@@ -101,7 +111,7 @@ MODELS = {
     'list_reminders': (ListReminders, 'List reminders and their IDs. Use before changing a reminder known only by name.'),
     'cancel_reminder': (ReminderID, 'Cancel a reminder explicitly requested by the user.'),
     'edit_reminder': (EditReminder, 'Edit or reschedule an existing pending or failed reminder; use due_at to snooze.'),
-    'edit_task': (EditTask, 'Edit title, deadline, priority (1 low to 5 high), project or notes of an existing task. Use search_tasks to find its ID.'),
+    'edit_task': (EditTask, 'Edit title, deadline, priority (1 low to 5 high), project or notes of an existing task. Use /tasks or search_tasks to find its visible task number.'),
     'search_tasks': (SearchTasks, 'Search tasks by title, notes or project, filter status/project, and show deadline, priority, project and notes.'),
     'save_note': (SaveNote, 'Save or update a personal knowledge-base note when asked, including project notes and goals. Do not store secrets.'),
     'search_notes': (SearchNotes, 'Search saved notes, goals and project knowledge by literal substring.'),
@@ -171,14 +181,27 @@ async def execute_personal_tool(user_id, name, arguments):
             fields.update(status='pending', attempts=0, retry_at=None, last_error=None)
             rows = await update_owned('reminders', args.reminder_id, user_id, fields, sql.SQL("status IN ('pending', 'failed')"))
         elif name == 'edit_task':
-            fields = args.model_dump(exclude_none=True, exclude={'task_id'})
+            fields = args.model_dump(
+                exclude_none=True,
+                exclude={'task_id'},
+            )
+
+            database_task_id = await resolve_task_number(
+                user_id,
+                args.task_id,
+            )
+
+            if database_task_id is None:
+                raise ValueError(
+                    'Task number not found.'
+                )
             # Read and update under one transaction lock so deadline/recurrence
             # cannot race another edit or completion.
             import psycopg
             from config import DATABASE_URL
             from psycopg.rows import dict_row
             async with await psycopg.AsyncConnection.connect(DATABASE_URL, row_factory=dict_row) as conn:
-                cursor = await conn.execute('SELECT due_date, recurrence FROM tasks WHERE id = %s AND telegram_user_id = %s FOR UPDATE', (args.task_id, user_id))
+                cursor = await conn.execute('SELECT due_date, recurrence FROM tasks WHERE id = %s AND telegram_user_id = %s FOR UPDATE', (database_task_id, user_id))
                 existing = await cursor.fetchone()
                 if not existing:
                     raise ValueError('Task not found.')
@@ -194,7 +217,7 @@ async def execute_personal_tool(user_id, name, arguments):
                     raise ValueError('Task title cannot be blank.')
                 cursor = await conn.execute(sql.SQL('UPDATE tasks SET {} WHERE id = %s AND telegram_user_id = %s RETURNING id').format(
                     sql.SQL(', ').join(sql.SQL('{} = %s').format(sql.Identifier(key)) for key in fields)),
-                    (*fields.values(), args.task_id, user_id))
+                    (*fields.values(), database_task_id, user_id))
                 rows = await cursor.fetchall()
         elif name == 'search_tasks':
             rows = await fetch('''SELECT id, title, status, due_date, priority, project, notes, recurrence FROM tasks
@@ -203,6 +226,17 @@ async def execute_personal_tool(user_id, name, arguments):
                 AND strpos(lower(title || ' ' || notes || ' ' || project), lower(%s)) > 0
                 ORDER BY priority DESC, id DESC LIMIT 50''',
                 (user_id, args.status, args.status, args.project, args.project, args.query))
+
+            task_numbers = await get_task_number_map(
+                user_id
+            )
+
+            for row in rows:
+                database_id = row.pop('id')
+                row['task_number'] = (
+                    task_numbers.get(database_id)
+                )
+
         elif name == 'save_note':
             if not args.title.strip() or not args.content.strip():
                 raise ValueError('Note title and content cannot be blank.')

@@ -21,6 +21,7 @@ from database.tasks import (
     create_task,
     complete_task,
     delete_task,
+    resolve_task_number,
 )
 
 from database.long_term_memory import (
@@ -198,17 +199,52 @@ async def tasks_command(
 ):
     from database.personal import fetch
     from utils.telegram_text import send_long_message
-    rows = await fetch("""SELECT id, title, status, due_date, priority, project, recurrence
-        FROM tasks WHERE telegram_user_id = %s
-        ORDER BY (status = 'open') DESC, priority DESC, id DESC LIMIT 100""",
-        (update.effective_user.id,))
+
+    rows = await fetch(
+        """SELECT
+            id,
+            title,
+            status,
+            due_date,
+            priority,
+            project,
+            recurrence
+        FROM tasks
+        WHERE telegram_user_id = %s
+        ORDER BY
+            (status = 'open') DESC,
+            priority DESC,
+            id DESC
+        LIMIT 100""",
+        (update.effective_user.id,),
+    )
+
     lines = []
-    for task in rows:
-        icon = "✅" if task['status'] == 'done' else "⬜"
-        lines.append(f"{icon} {task['id']}. {task['title']}\n"
-                     f"Priority {task['priority']}/5 · {task['project'] or 'No project'} · "
-                     f"Due: {task['due_date'] or 'Not set'} · {task['recurrence']}")
-    await send_long_message(update, "\n\n".join(lines) or "You don't have any tasks yet.")
+
+    for task_number, task in enumerate(
+        rows,
+        start=1,
+    ):
+        icon = (
+            "✅"
+            if task["status"] == "done"
+            else "⬜"
+        )
+
+        lines.append(
+            f"{icon} {task_number}. "
+            f"{task['title']}\n"
+            f"Priority {task['priority']}/5 · "
+            f"{task['project'] or 'No project'} · "
+            f"Due: {task['due_date'] or 'Not set'} · "
+            f"{task['recurrence']}"
+        )
+
+    await send_long_message(
+        update,
+        "\n\n".join(lines)
+        or "You don't have any tasks yet.",
+    )
 
 
 async def add_task_command(
@@ -237,7 +273,8 @@ async def add_task_command(
 
     await update.message.reply_text(
         f"✅ Task added.\n\n"
-        f"{task_id}. {title}"
+        f"{title}\n"
+        "Use /tasks to see its task number."
     )
 
 
@@ -263,13 +300,24 @@ async def done_task_command(
 
     except ValueError:
         await update.message.reply_text(
-            "Task ID must be a number."
+            "Task number must be a number."
+        )
+        return
+
+    database_task_id = await resolve_task_number(
+        telegram_user_id,
+        task_id,
+    )
+
+    if database_task_id is None:
+        await update.message.reply_text(
+            "I couldn't find that task number."
         )
         return
 
     title = await complete_task(
         telegram_user_id,
-        task_id,
+        database_task_id,
     )
 
     if not title:
@@ -305,13 +353,24 @@ async def delete_task_command(
 
     except ValueError:
         await update.message.reply_text(
-            "Task ID must be a number."
+            "Task number must be a number."
+        )
+        return
+
+    database_task_id = await resolve_task_number(
+        telegram_user_id,
+        task_id,
+    )
+
+    if database_task_id is None:
+        await update.message.reply_text(
+            "I couldn't find that task number."
         )
         return
 
     title = await delete_task(
         telegram_user_id,
-        task_id,
+        database_task_id,
     )
 
     if not title:

@@ -10,6 +10,8 @@ from database.tasks import (
     get_tasks,
     complete_task,
     delete_task,
+    resolve_task_number,
+    get_task_number_map,
 )
 
 
@@ -93,7 +95,7 @@ TASK_TOOLS = [
         "function": {
             "name": "complete_task",
             "description": (
-                "Mark one task as completed. Use a task ID. "
+                "Mark one task as completed. Use the visible task number from /tasks. "
                 "If only the task name is known, call "
                 "list_tasks first."
             ),
@@ -103,7 +105,7 @@ TASK_TOOLS = [
                     "task_id": {
                         "type": "integer",
                         "description": (
-                            "Database ID of the task to complete."
+                            "Visible task number shown by /tasks."
                         ),
                     },
                 },
@@ -117,7 +119,7 @@ TASK_TOOLS = [
         "function": {
             "name": "delete_task",
             "description": (
-                "Delete one task. Use a task ID. If only the "
+                "Delete one task. Use the visible task number from /tasks. If only the "
                 "task name is known, call list_tasks first."
             ),
             "parameters": {
@@ -126,7 +128,7 @@ TASK_TOOLS = [
                     "task_id": {
                         "type": "integer",
                         "description": (
-                            "Database ID of the task to delete."
+                            "Visible task number shown by /tasks."
                         ),
                     },
                 },
@@ -174,10 +176,18 @@ async def execute_task_tool(
             **extra,
         )
 
+        task_numbers = await get_task_number_map(
+            telegram_user_id
+        )
+
+        task_number = task_numbers.get(
+            task_id
+        )
+
         return json.dumps(
             {
                 "success": True,
-                "task_id": task_id,
+                "task_number": task_number,
                 "title": title,
                 "due_date": due_date,
                 "priority": parsed.priority,
@@ -195,15 +205,15 @@ async def execute_task_tool(
 
         tasks = []
 
-        for (
+        for task_number, (
             task_id,
             title,
             status,
             due_date,
-        ) in rows:
+        ) in enumerate(rows, start=1):
             tasks.append(
                 {
-                    "task_id": task_id,
+                    "task_number": task_number,
                     "title": title,
                     "status": status,
                     "due_date": due_date,
@@ -240,9 +250,22 @@ async def execute_task_tool(
                 }
             )
 
-        title = await complete_task(
+        database_task_id = await resolve_task_number(
             telegram_user_id,
             task_id,
+        )
+
+        if database_task_id is None:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": "That task number was not found.",
+                }
+            )
+
+        title = await complete_task(
+            telegram_user_id,
+            database_task_id,
         )
 
         if not title:
@@ -258,7 +281,7 @@ async def execute_task_tool(
         return json.dumps(
             {
                 "success": True,
-                "task_id": task_id,
+                "task_number": task_id,
                 "title": title,
                 "status": "done",
             },
@@ -287,9 +310,22 @@ async def execute_task_tool(
                 }
             )
 
-        title = await delete_task(
+        database_task_id = await resolve_task_number(
             telegram_user_id,
             task_id,
+        )
+
+        if database_task_id is None:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": "That task number was not found.",
+                }
+            )
+
+        title = await delete_task(
+            telegram_user_id,
+            database_task_id,
         )
 
         if not title:
@@ -305,7 +341,7 @@ async def execute_task_tool(
         return json.dumps(
             {
                 "success": True,
-                "task_id": task_id,
+                "task_number": task_id,
                 "title": title,
                 "deleted": True,
             },

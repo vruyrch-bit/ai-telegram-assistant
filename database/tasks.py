@@ -62,12 +62,9 @@ async def get_tasks(
             FROM tasks
             WHERE telegram_user_id = %s
             ORDER BY
-                CASE
-                    WHEN status = 'open'
-                    THEN 0
-                    ELSE 1
-                END,
-                id ASC
+                (status = 'open') DESC,
+                priority DESC,
+                id DESC
             """,
             (
                 telegram_user_id,
@@ -148,3 +145,67 @@ async def delete_task(
         return None
 
     return row[0]
+
+
+async def get_task_number_map(
+    telegram_user_id: int,
+):
+    """Map private database IDs to user-visible task numbers."""
+    async with await psycopg.AsyncConnection.connect(
+        DATABASE_URL
+    ) as connection:
+        cursor = await connection.execute(
+            """
+            SELECT id
+            FROM tasks
+            WHERE telegram_user_id = %s
+            ORDER BY
+                (status = 'open') DESC,
+                priority DESC,
+                id DESC
+            LIMIT 100
+            """,
+            (telegram_user_id,),
+        )
+        rows = await cursor.fetchall()
+
+    return {
+        row[0]: number
+        for number, row in enumerate(
+            rows,
+            start=1,
+        )
+    }
+
+
+async def resolve_task_number(
+    telegram_user_id: int,
+    task_number: int,
+):
+    """Resolve visible task number to private database ID."""
+    if task_number < 1:
+        return None
+
+    async with await psycopg.AsyncConnection.connect(
+        DATABASE_URL
+    ) as connection:
+        cursor = await connection.execute(
+            """
+            SELECT id
+            FROM tasks
+            WHERE telegram_user_id = %s
+            ORDER BY
+                (status = 'open') DESC,
+                priority DESC,
+                id DESC
+            OFFSET %s
+            LIMIT 1
+            """,
+            (
+                telegram_user_id,
+                task_number - 1,
+            ),
+        )
+        row = await cursor.fetchone()
+
+    return row[0] if row else None

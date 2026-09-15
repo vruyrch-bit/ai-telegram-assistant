@@ -43,22 +43,123 @@ async def test_advanced_guitar_task_lifecycle(isolated_db):
         'title': 'Order Sitka spruce', 'priority': 5, 'project': 'guitar',
         'due_date': due.isoformat(), 'notes': 'Solid top, quarter sawn'}))
     assert created['success']
-    task_id = created['task_id']
-    row = (await isolated_db('SELECT * FROM tasks WHERE id = %s', (task_id,)))[0]
-    assert (row['priority'], row['project'], row['due_date']) == (5, 'guitar', due.isoformat())
+
+    task_number = created['task_number']
+
+    row = (
+        await isolated_db(
+            "SELECT * FROM tasks "
+            "WHERE telegram_user_id = %s "
+            "AND title = %s",
+            (101, 'Order Sitka spruce'),
+        )
+    )[0]
+
+    database_task_id = row['id']
+
+    assert (
+        row['priority'],
+        row['project'],
+        row['due_date'],
+    ) == (
+        5,
+        'guitar',
+        due.isoformat(),
+    )
+
     update, context = telegram()
     await tasks_command(update, context)
-    assert 'Priority 5/5' in replies(update) and 'guitar' in replies(update)
-    assert (await personal('edit_task', task_id=task_id, priority=3, due_date=due.replace(hour=20).isoformat()))['success']
-    assert (await personal('search_tasks', query='guitar'))['results'][0]['id'] == task_id
-    assert (await personal('search_tasks', project='GUITAR'))['results'][0]['id'] == task_id
-    assert (await personal('search_tasks', query='quarter sawn'))['results'][0]['id'] == task_id
-    assert (await personal('edit_task', task_id=task_id, title='Order solid Sitka top'))['success']
-    assert json.loads(await execute_task_tool(101, 'complete_task', {'task_id': task_id}))['success']
-    row = (await isolated_db('SELECT * FROM tasks WHERE id = %s', (task_id,)))[0]
-    assert (row['status'], row['priority'], row['due_date']) == ('done', 3, due.replace(hour=20).isoformat())
-    assert json.loads(await execute_task_tool(101, 'delete_task', {'task_id': task_id}))['success']
-    assert not await isolated_db('SELECT id FROM tasks WHERE id = %s', (task_id,))
+
+    assert (
+        'Priority 5/5' in replies(update)
+        and 'guitar' in replies(update)
+    )
+
+    assert (
+        await personal(
+            'edit_task',
+            task_id=task_number,
+            priority=3,
+            due_date=due.replace(
+                hour=20
+            ).isoformat(),
+        )
+    )['success']
+
+    assert (
+        await personal(
+            'search_tasks',
+            query='guitar',
+        )
+    )['results'][0]['task_number'] == task_number
+
+    assert (
+        await personal(
+            'search_tasks',
+            project='GUITAR',
+        )
+    )['results'][0]['task_number'] == task_number
+
+    assert (
+        await personal(
+            'search_tasks',
+            query='quarter sawn',
+        )
+    )['results'][0]['task_number'] == task_number
+
+    assert (
+        await personal(
+            'edit_task',
+            task_id=task_number,
+            title='Order solid Sitka top',
+        )
+    )['success']
+
+    assert json.loads(
+        await execute_task_tool(
+            101,
+            'complete_task',
+            {
+                'task_id':
+                    task_number,
+            },
+        )
+    )['success']
+
+    row = (
+        await isolated_db(
+            'SELECT * FROM tasks WHERE id = %s',
+            (database_task_id,),
+        )
+    )[0]
+
+    assert (
+        row['status'],
+        row['priority'],
+        row['due_date'],
+    ) == (
+        'done',
+        3,
+        due.replace(
+            hour=20
+        ).isoformat(),
+    )
+
+    assert json.loads(
+        await execute_task_tool(
+            101,
+            'delete_task',
+            {
+                'task_id':
+                    task_number,
+            },
+        )
+    )['success']
+
+    assert not await isolated_db(
+        'SELECT id FROM tasks WHERE id = %s',
+        (database_task_id,),
+    )
 
 
 @pytest.mark.asyncio
@@ -259,8 +360,37 @@ async def test_daily_task_creates_one_next_occurrence_with_metadata(isolated_db)
     result = json.loads(await execute_task_tool(101, 'create_task', {
         'title': 'Practice guitar', 'due_date': due.isoformat(), 'recurrence': 'daily',
         'priority': 5, 'project': 'guitar', 'notes': 'Scales'}))
-    assert await complete_task(101, result['task_id']) == 'Practice guitar'
-    assert await complete_task(101, result['task_id']) is None
+    task_number = result['task_number']
+
+    row = (
+        await isolated_db(
+            "SELECT id FROM tasks "
+            "WHERE telegram_user_id = %s "
+            "AND title = %s "
+            "AND status = 'open'",
+            (101, 'Practice guitar'),
+        )
+    )[0]
+
+    database_task_id = row['id']
+
+    assert (
+        await complete_task(
+            101,
+            database_task_id,
+        )
+        == 'Practice guitar'
+    )
+
+    assert (
+        await complete_task(
+            101,
+            database_task_id,
+        )
+        is None
+    )
+
+    assert task_number == 1
     rows = await isolated_db("SELECT * FROM tasks WHERE status = 'open'")
     assert len(rows) == 1
     assert rows[0]['due_date'] == (due + timedelta(days=1)).isoformat()
